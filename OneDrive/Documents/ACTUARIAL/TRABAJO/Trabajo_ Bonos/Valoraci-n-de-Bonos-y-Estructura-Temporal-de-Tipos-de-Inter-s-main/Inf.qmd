@@ -1,0 +1,100 @@
+---
+title: "Valoración de Bonos y Estructura Temporal de Tipos de Interés"
+author: "----"
+date: " --- "
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    colorlinks: true
+    geometry: "margin=2cm"
+lang: "es"
+---
+
+## Introducción
+
+La valoración de instrumentos de renta fija es uno de los pilares de la matemática actuarial. Las entidades aseguradoras mantienen en sus balances carteras de bonos soberanos que respaldan compromisos de largo plazo con los asegurados, y el modo en que dichos activos se valoran determina tanto el resultado contable como la solvencia de la entidad.
+
+Hoy conviven dos lógicas de valoración. Bajo NIIF 9, un bono mantenido para cobrar flujos contractuales se mide a coste amortizado, es decir, con la tasa interna de retorno fijada en el momento de la adquisición, de modo que las fluctuaciones del mercado no afectan al valor contable. Bajo Solvencia II, en cambio, el balance económico exige valorar activos y pasivos a valor razonable, descontando los flujos con la estructura temporal de tipos de interés publicada por la EIOPA. La diferencia entre ambos valores es una medida directa del riesgo de tipo de interés y de crédito al que está expuesta la entidad.
+
+En este trabajo se construirá una cartera de bonos soberanos reales, se valorará bajo ambos enfoques, se medirá su sensibilidad a movimientos de la curva de tipos y se cuantificará su riesgo
+
+## Objetivo Principal:
+
+Conectar los fundamentos de la matemática financiera con los marcos regulatorio-contables internacionales (Solvencia II y NIIF 9). A través del análisis de datos reales de bonos soberanos y de la estructura temporal de tipos de interés (ETTI) publicada por la EIOPA, se abordará la extracción, procesamiento y aplicación de curvas spot libres de riesgo de la normativa europea.
+
+## Fase 1: Obtención de Datos y Selección de la Cartera
+
+Para la realización del proyecto, la fecha de valoración de referencia se ha fijado en el 30 de septiembre de 2026 (2026-09-30). La cartera está integrada por seis bonos soberanos reales seleccionados de acuerdo con los criterios regulatorios exigidos (mínimo 10 años de plazo residual al corte) y clasificados en tres niveles de riesgo:
+
+-   **Bonos A (Referencia / Bajo Riesgo - Alemania):**
+    -   `DE000BU2Z064` (Bund): Emitido el 2026-01-09 con vencimiento el 2036-02-15 (plazo residual $\ge 10$ años), cupón nominal del 2.90%, rating AAA, precio limpio de 96.82 y cupón corrido de 2.31.
+    -   `DE000BU2Z072` (Bund): Emitido el 2026-09-30 con vencimiento el 2036-09-20, cupón nominal del 3.00%, rating AAA, precio limpio de 96.95 y cupón corrido de 0.649.
+-   **Bonos B (Soberano Periférico - España e Italia):**
+    -   `ES0000012Q08` (España): Emitido el 2026-01-27 con vencimiento el 2036-04-30, cupón del 3.30%, rating A, precio limpio de 94.54 y cupón corrido de 1.636.
+    -   `IT0005729931` (Italia - BTP): Emitido el 2026-09-29 con vencimiento el 2036-10-01, pago semestral con cupón del 4.00%, rating BBB, precio limpio de 95.58 y cupón corrido de 4.00.
+-   **Bonos C (Mercado Emergente - Colombia y Chile):**
+    -   `US195325EP60` (Colombia - Global USD): Emitido el 2024-11-07 con vencimiento el 2036-11-07, cupón semestral del 7.75%, rating BB-, precio limpio de 101.67 y cupón corrido de 3.5736.
+    -   `XS3272223762` (Chile - Global EUR): Emitido el 2026-01-14 con vencimiento el 2036-04-14, cupón del 3.875%, rating A-, precio limpio de 99.50 y cupón corrido de 2.09.
+
+------------------------------------------------------------------------
+
+```{r}
+#| warning: false
+#| message: false
+#Implementación en R
+library(readxl)
+library(dplyr)
+library(tibble)
+
+fecha_valoracion <- as.Date("2026-09-30")
+
+# ==============================================================================
+# 1. CARTERA DE BONOS
+# ==============================================================================
+cartera_bonos <- tibble(
+  ISIN = c("DE000BU2Z064", "DE000BU2Z072", "ES0000012Q08", "IT0005729931", "US195325EP60", "XS3272223762"),
+  Emisor = c("Alemania (Bund)", "Alemania (Bund)", "España (Obligación)", "Italia (BTP)", "Colombia (Global)", "Chile (Global)"),
+  Categoria = c("A - Bajo Riesgo", "A - Bajo Riesgo", "B - Periférico", "B - Periférico", "C - Emergente", "C - Emergente"),
+  Moneda = c("EUR", "EUR", "EUR", "EUR", "USD", "EUR"),
+  Rating = c("AAA", "AAA", "A", "BBB", "BB-", "A-"),
+  Fecha_Emision = as.Date(c("2026-01-09", "2026-09-30", "2026-01-27", "2026-09-29", "2024-11-07", "2026-01-14")),
+  Fecha_Vencimiento = as.Date(c("2036-02-15", "2036-08-15", "2036-04-30", "2036-10-01", "2036-11-07", "2036-04-14")),
+  Plazo_Residual = as.numeric(difftime(Fecha_Vencimiento, fecha_valoracion, units = "days")) / 365.25,
+  Cupón_Nominal = c(0.029, 0.030, 0.033, 0.040, 0.0775, 0.03875),
+  Periodicidad = c(1, 1, 1, 2, 2, 1),   # Chile paga cupón anual
+  Precio_Limpio = c(96.82, 96.95, 94.54, 95.58, 101.67, 99.50),   # XS3272223762 falta corregir
+  Cupón_Corrido = c(2.31, 0.649, 1.636, 4, 3.5736, 2.09),          
+  ) %>%
+  mutate(Precio_Sucio = Precio_Limpio + Cupón_Corrido)
+print(cartera_bonos)
+```
+
+### Justificación Técnica y Procesamiento de la ETTI EIOPA
+
+Para el cálculo del valor razonable (*Mark-to-Market*) exigido por Solvencia II, se extrae la Estructura Temporal de Tipos de Interés (ETTI) desde la hoja oficial `RFR_spot_no_VA` del informe EIOPA a fecha 30 de septiembre de 2026.
+
+Se ha seleccionado la variante sin ajuste por volatilidad (*no-VA*) para evaluar los flujos bajo una curva pura libre de riesgo sin sesgos por iliquidez. Técnicamente, los datos brutos del archivo Excel se leen como texto para evitar inconsistencias de formato. La extracción comienza a partir de la fila 11 (donde inician las curvas de tipos) seleccionando los plazos anuales (*Maturity*, columna C), las tasas spot en euros (EUR, columna D) utilizadas para la mayoría de los bonos de la cartera, y las tasas spot en dólares (USD, columna AQ) necesarias para la valoración del bono global de Colombia.
+
+------------------------------------------------------------------------
+
+```{r}
+# ==============================================================================
+# 2. EXTRACCIÓN DE CURVA EIOPA (Versión Limpia y Directa)
+# ==============================================================================
+raw_eiopa <- read_excel("EIOPA_RFR_20260930_Term_Structures.xlsx", 
+                        sheet = "RFR_spot_no_VA", 
+                        col_names = FALSE, 
+                        col_types = "text")
+
+# Tomamos las filas directamente desde la fila 11 en adelante usando corchetes limpios
+curva_final <- tibble(
+  Maturity = as.numeric(raw_eiopa[[1]][10:nrow(raw_eiopa)]),   # Columna 2 (Plazo) desde fila 11
+  Rate_EUR = as.numeric(raw_eiopa[[4]][10:nrow(raw_eiopa)]),   # Columna 3 (Eur) desde fila 11
+  Rate_USD = as.numeric(raw_eiopa[[42]][10:nrow(raw_eiopa)])  # Columna 42 (USD) desde fila 11
+) %>%
+  filter(!is.na(Maturity))
+
+# Ver los primeros 15 registros
+print(head(curva_final, 15))
+```
