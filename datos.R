@@ -18,8 +18,8 @@ cartera_bonos <- tibble(
   Plazo_Residual = as.numeric(difftime(Fecha_Vencimiento, fecha_valoracion, units = "days")) / 365.25,
   Cupón_Nominal = c(0.029, 0.030, 0.033, 0.040, 0.0775, 0.03875),
   Periodicidad = c(1, 1, 1, 2, 2, 1),   # Chile paga cupón anual
-  Precio_Limpio = c(96.82, 96.95, 94.54, 95.58, 101.67, 94.83),   # XS3272223762 falta corregir
-  Cupón_Corrido = c(2.31, 0.649, 1.636, 4, 3.5736, 2.113),          
+  Precio_Limpio = c(96.82, 96.95, 94.54, 95.58, 101.67, 99.50),   # XS3272223762 falta corregir
+  Cupón_Corrido = c(2.31, 0.649, 1.636, 4, 3.5736, 2.09),          
   ) %>%
   mutate(Precio_Sucio = Precio_Limpio + Cupón_Corrido)
 print(cartera_bonos)
@@ -30,24 +30,17 @@ print(cartera_bonos)
 ################################################################################
 
 
-# ==============================================================================
-# 2. EXTRACCIÓN DE CURVA EIOPA (Versión Limpia y Directa)
-# ==============================================================================
 raw_eiopa <- read_excel("EIOPA_RFR_20260930_Term_Structures.xlsx", 
                         sheet = "RFR_spot_no_VA", 
                         col_names = FALSE, 
                         col_types = "text")
-
-# Tomamos las filas directamente desde la fila 11 en adelante usando corchetes limpios
+datos_crudos <- raw_eiopa[11:nrow(raw_eiopa), ]
 curva_final <- tibble(
-  Maturity = as.numeric(raw_eiopa[[1]][10:nrow(raw_eiopa)]),   # Columna 2 (Plazo) desde fila 11
-  Rate_EUR = as.numeric(raw_eiopa[[4]][10:nrow(raw_eiopa)]),   # Columna 3 (Eur) desde fila 11
-  Rate_USD = as.numeric(raw_eiopa[[42]][10:nrow(raw_eiopa)])  # Columna 42 (USD) desde fila 11
+  Maturity = as.numeric(datos_crudos[[1]]),   
+  Rate_EUR = as.numeric(datos_crudos[[2]]),   
+  Rate_USD = as.numeric(datos_crudos[[42]])   
 ) %>%
   filter(!is.na(Maturity))
 
-# Ver los primeros 15 registros
 print(head(curva_final, 15))
-
-
 
