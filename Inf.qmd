@@ -68,6 +68,7 @@ cartera_bonos <- tibble(
   ) %>%
   mutate(Precio_Sucio = Precio_Limpio + Cupón_Corrido)
 print(cartera_bonos)
+#holaaa mundonnnnnn
 ```
 
 ### Justificación Técnica y Procesamiento de la ETTI EIOPA
