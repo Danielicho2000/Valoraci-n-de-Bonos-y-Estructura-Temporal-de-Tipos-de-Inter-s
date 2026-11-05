@@ -49,26 +49,52 @@ library(tibble)
 
 fecha_valoracion <- as.Date("2026-09-30")
 
-# ==============================================================================
-# 1. CARTERA DE BONOS
-# ==============================================================================
+# Cupón corrido en puntos por cada 100 de nominal (base ACT/ACT)
+cupon_corrido <- function(cupon, freq, inicio_devengo, ref_inicio, ref_fin, fecha) {
+  (cupon / freq) * as.numeric(fecha - inicio_devengo) /
+    as.numeric(ref_fin - ref_inicio) * 100
+}
+
 cartera_bonos <- tibble(
-  ISIN = c("DE000BU2Z064", "DE000BU2Z072", "ES0000012Q08", "IT0005729931", "US195325EP60", "XS3272223762"),
-  Emisor = c("Alemania (Bund)", "Alemania (Bund)", "España (Obligación)", "Italia (BTP)", "Colombia (Global)", "Chile (Global)"),
-  Categoria = c("A - Bajo Riesgo", "A - Bajo Riesgo", "B - Periférico", "B - Periférico", "C - Emergente", "C - Emergente"),
-  Moneda = c("EUR", "EUR", "EUR", "EUR", "USD", "EUR"),
-  Rating = c("AAA", "AAA", "A", "BBB", "BB-", "A-"),
-  Fecha_Emision = as.Date(c("2026-01-09", "2026-09-30", "2026-01-27", "2026-09-29", "2024-11-07", "2026-01-14")),
-  Fecha_Vencimiento = as.Date(c("2036-02-15", "2036-08-15", "2036-04-30", "2036-10-01", "2036-11-07", "2036-04-14")),
-  Plazo_Residual = as.numeric(difftime(Fecha_Vencimiento, fecha_valoracion, units = "days")) / 365.25,
-  Cupón_Nominal = c(0.029, 0.030, 0.033, 0.040, 0.0775, 0.03875),
-  Periodicidad = c(1, 1, 1, 2, 2, 1),   # Chile paga cupón anual
-  Precio_Limpio = c(96.82, 96.95, 94.54, 95.58, 101.67, 99.50),   # XS3272223762 falta corregir
-  Cupón_Corrido = c(2.31, 0.649, 1.636, 4, 3.5736, 2.09),          
-  ) %>%
-  mutate(Precio_Sucio = Precio_Limpio + Cupón_Corrido)
-print(cartera_bonos)
-#holaaa mundonnnnnn
+  ISIN      = c("DE0001135325", "DE0001135275", "ES00000120N0",
+                "IT0005530032", "XS3239891503", "XS2108987517"),
+  Emisor    = c("Alemania (Bund)", "Alemania (Bund)", "España (Obligación)",
+                "Italia (BTP)", "Colombia (Global)", "Chile (Global)"),
+  Categoria = c("A - Bajo Riesgo", "A - Bajo Riesgo",
+                "B - Periférico", "B - Periférico",
+                "C - Emergente", "C - Emergente"),
+  Moneda    = c("EUR", "EUR", "EUR", "EUR", "EUR", "EUR"),
+  Rating = c("AAA", "AAA", "A+", "BBB+", "BB-", "A"),   # Calificación estándar (ej. S&P)  # completar con la fuente (misma agencia)
+  
+  Fecha_Emision     = as.Date(c("2007-01-26", "2005-01-04", "2007-06-20", #AA/MM/DD
+                                "2022-09-01", "2025-11-26", "2020-01-29")),
+  Fecha_Vencimiento = as.Date(c("2039-07-04", "2037-01-04", "2040-07-30",
+                                "2043-09-01", "2038-11-26", "2040-01-29")),
+  
+  Cupon_Nominal = c(0.0425, 0.04, 0.049, 0.0445, 0.065, 0.0125),   # en decimal
+  Periodicidad  = c(1, 1, 1, 2, 1, 1),
+  
+  # Fechas para el cupón corrido
+  Inicio_Devengo = as.Date(c("2026-01-26", "2026-01-04", "2026-07-30",
+                             "2026-09-01", "2025-11-26", "2026-01-29")),
+  Ref_Inicio     = as.Date(c("2026-01-26", "2026-01-04", "2026-07-30",
+                             "2026-09-01", "2025-11-26", "2026-01-29")),
+  Ref_Fin        = as.Date(c("2027-01-26", "2027-01-04", "2027-07-30",
+                             "2027-03-01", "2026-11-26", "2027-01-29")),
+  
+  Precio_Limpio = c(105.293, 103.435, 105.75, 94.43, 96.25, 67.09)   
+) %>%
+  mutate(
+    Plazo_Residual = as.numeric(Fecha_Vencimiento - fecha_valoracion) / 365.25,
+    Cumple_10y     = Fecha_Vencimiento >= as.Date("2036-09-30"),
+    Cupon_Corrido  = cupon_corrido(Cupon_Nominal, Periodicidad,
+                                   Inicio_Devengo, Ref_Inicio, Ref_Fin, fecha_valoracion),
+    Precio_Sucio   = Precio_Limpio + Cupon_Corrido
+  )
+
+print(cartera_bonos %>%
+        select(ISIN, Categoria, Fecha_Vencimiento, Plazo_Residual, Cumple_10y,
+               Precio_Limpio, Cupon_Corrido, Precio_Sucio))
 ```
 
 ### Justificación Técnica y Procesamiento de la ETTI EIOPA
