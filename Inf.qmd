@@ -2,17 +2,19 @@
 title: "Valoración de Bonos y Estructura Temporal de Tipos de Interés"
 author: "----"
 date: " --- "
-format:
-  pdf:
-    toc: true
-    number-sections: true
+format:  
+  pdf:    
+    pdf-engine: xelatex    
+    documentclass: article    
+    geometry:      
+      - margin=2cm    
+    fontsize: 11pt    
+    number-sections: true    
     colorlinks: true
-    geometry: "margin=2cm"
-execute:
-  echo: false
-  warning: false
+execute:  
+  echo: false  
+  warning: false  
   message: false
-lang: "es"
 ---
 
 ## Introducción
@@ -138,10 +140,61 @@ cartera_bonos <- tibble(
     Precio_Sucio   = Precio_Limpio + Cupon_Corrido
   )
 
-print(cartera_bonos %>%
-        select(ISIN, Categoria, Estado, Fecha_Vencimiento,
-               Plazo_Residual, Precio_Limpio, Cupon_Corrido, Precio_Sucio))
 
+
+```
+
+```{r}
+
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+tabla_cartera <- cartera_bonos %>%
+  transmute(
+    ISIN,
+    `Categoría` = Categoria,
+    `País` = Estado,
+    `Vencimiento` = format(Fecha_Vencimiento, "%d/%m/%Y"),
+    `Plazo (años)` = sprintf("%.2f", Plazo_Residual),
+    `P. limpio` = sprintf("%.2f", Precio_Limpio),
+    `Cupón corrido` = sprintf("%.2f", Cupon_Corrido),
+    `P. sucio` = sprintf("%.2f", Precio_Sucio)
+  )
+
+tabla_cartera %>%
+  knitr::kable(
+    format = "latex",
+    booktabs = TRUE,
+    escape = TRUE,
+    caption = "Características y valoración de la cartera de bonos",
+    align = c("l", "l", "l", "c", "r", "r", "r", "r"),
+    linesep = ""
+  ) %>%
+  kableExtra::kable_styling(
+    latex_options = c(
+      "striped",
+      "scale_down",
+      "hold_position"
+    ),
+    font_size = 8,
+    full_width = FALSE,
+    position = "center",
+    stripe_color = "gray!10"
+  ) %>%
+  kableExtra::row_spec(
+    0,
+    bold = TRUE,
+    color = "white",
+    background = "#17365D"
+  ) %>%
+  kableExtra::add_header_above(
+    c(
+      "Identificación del bono" = 4,
+      "Valoración por 100 de nominal" = 4
+    ),
+    bold = TRUE
+  )
 
 ```
 
@@ -183,13 +236,13 @@ $$
 
 Con: $C_k$ cupones periódicos mensuales, $P_0$ precio de adquisición sucio y $VN$ el valor nominal (base 1000).
 
-Obteniendo los siguientes resultados de \$y_0\$ para cada bono
+Obteniendo los siguientes resultados de $y_0$ para cada bono
 
 ```{r}
 # Función para calcular la TIR inicial (y_0) de un bono individual
 calcular_tir_bono <- function(cupon_nominal, freq, ref_fin, fecha_venc, 
                               precio_sucio, fecha_val = as.Date("2026-09-30"), 
-                              vn = 1000) {
+                              vn = 100) {
   
   cupon_nominal <- as.numeric(cupon_nominal)
   freq          <- as.numeric(freq)
@@ -244,13 +297,63 @@ cartera_bonos <- cartera_bonos %>%
   ) %>%
   ungroup()
 
-# Visualizar resultados
-print(cartera_bonos %>%
-        select(ISIN, Estado, Cupon_Nominal, Periodicidad, 
-               Precio_Limpio, Precio_Sucio, TIR_y0))
+
 ```
 
-Además, se es necesario conocer la tabla de amortización completa para cada título, mediante la siguiente expresión para calcular el valor contable en el periodo $k$.
+```{r}
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+tabla_tir <- cartera_bonos %>%
+  transmute(
+    ISIN,
+    `País` = Estado,
+    `Cupón (%)` = sprintf("%.2f",
+                          Cupon_Nominal * 100),
+    `Frecuencia` = Periodicidad,
+    `P. limpio` = sprintf("%.2f", Precio_Limpio),
+    `P. sucio` = sprintf("%.2f", Precio_Sucio),
+    `TIR (%)` = sprintf("%.4f", TIR_y0 * 100)
+  )
+
+tabla_tir %>%
+  knitr::kable(
+    format = "latex",
+    booktabs = TRUE,
+    escape = TRUE,
+    caption = "Valoración de bonos individuales y cálculo de la TIR",
+    align = c("l", "l", "r", "c", "r", "r", "r"),
+    linesep = ""
+  ) %>%
+  kableExtra::kable_styling(
+    latex_options = c(
+      "striped",
+      "scale_down",
+      "hold_position"
+    ),
+    font_size = 8,
+    full_width = FALSE,
+    position = "center",
+    stripe_color = "gray!10"
+  ) %>%
+  kableExtra::row_spec(
+    0,
+    bold = TRUE,
+    color = "white",
+    background = "#17365D"
+  ) %>%
+  kableExtra::add_header_above(
+    c(
+      "Identificación del bono" = 4,
+      "Valoración y rentabilidad" = 3
+    ),
+    bold = TRUE
+  )
+
+```
+
+A continuación se muestra las tablas de amortización completa para cada título, mediante la siguiente expresión para calcular el valor contable en el periodo $k$, considerando que $V_0^{CA}=P_0$
 
 $$
 V_k^{\text{CA}} = V_{k-1}^{\text{CA}} \times (1 + y_0)^{t_k - t_{k-1}} - C_kV_k^{\text{CA}} 
@@ -260,7 +363,7 @@ $$
 construir_tabla_amortizacion <- function(isin, estado, cupon_nominal, freq, 
                                          fecha_venc, precio_sucio, y0, 
                                          fecha_val = as.Date("2026-09-30"), 
-                                         vn = 1000) {
+                                         vn = 100) {
   
   cupon_nominal <- as.numeric(cupon_nominal)
   if (cupon_nominal > 1) cupon_nominal <- cupon_nominal / 100
@@ -324,29 +427,116 @@ construir_tabla_amortizacion <- function(isin, estado, cupon_nominal, freq,
 ```
 
 ```{r}
+library(dplyr)
+library(purrr)
 library(knitr)
+library(kableExtra)
 
-# Recorrer cada bono de la lista anidada de forma interactiva
-purrr::iwalk(tablas_amortizacion, function(df_bono, isin_actual) {
+# Generar las seis tablas de amortización
+tablas_amortizacion <- pmap(
+  list(
+    isin = cartera_bonos$ISIN,
+    estado = cartera_bonos$Estado,
+    cupon_nominal = cartera_bonos$Cupon_Nominal,
+    freq = cartera_bonos$Periodicidad,
+    fecha_venc = cartera_bonos$Fecha_Vencimiento,
+    precio_sucio = cartera_bonos$Precio_Sucio,
+    y0 = cartera_bonos$TIR_y0
+  ),
+  construir_tabla_amortizacion,
+  fecha_val = fecha_valoracion,
+  vn = 100
+)
+```
+
+```{r}
+formatear_amortizacion <- function(tabla, numero) {
   
-  # Extraer metadatos para el título
-  estado_bono <- df_bono$Estado[1]
-  
-  # Imprimir encabezado de sección en Markdown para Quarto
-  cat(sprintf("\n\n### Bono: %s (ISIN: %s)\n\n", estado_bono, isin_actual))
-  
-  # Imprimir la tabla formateada limpiamente
-  print(
-    kable(
-      df_bono, 
-      format = "markdown", 
-      digits = 4,
-      caption = sprintf("Tabla de Amortización a Coste Amortizado – %s (%s)", estado_bono, isin_actual)
+  datos <- tabla %>%
+    transmute(
+      `Período` = Periodo_k,
+      Fecha = format(Fecha, "%d/%m/%Y"),
+      `V. inicial` = ifelse(
+        is.na(Valor_Contable_Inicial),
+        "-",
+        sprintf("%.2f", Valor_Contable_Inicial)
+      ),
+      `Ingreso financiero` = sprintf(
+        "%.2f", Ingreso_Financiero_Ik
+      ),
+      `Cupón cobrado` = sprintf(
+        "%.2f", Cupon_Cobrado_Ck
+      ),
+      `Amortización` = sprintf(
+        "%.2f", Amortizacion_Prima_Desc
+      ),
+      `V. final` = sprintf(
+        "%.2f", Valor_Contable_Final
+      )
     )
+  
+  titulo <- paste0(
+    "Cronograma de amortización - Bono ",
+    numero, " - ", tabla$ISIN[1],
+    " (", tabla$Estado[1], ")"
   )
   
-  cat("\n\n") # Espaciado entre tablas
-})
+  datos %>%
+    knitr::kable(
+      format = "latex",
+      booktabs = TRUE,
+      longtable = FALSE,
+      escape = TRUE,
+      caption = titulo,
+      align = c("c", "c", "r", "r", "r", "r", "r"),
+      linesep = ""
+    ) %>%
+    kableExtra::kable_styling(
+      latex_options = c(
+        "striped",
+        "HOLD_position",
+        "scale_down"
+      ),
+      font_size = 7,
+      full_width = FALSE,
+      position = "center",
+      stripe_color = "gray!10"
+    ) %>%
+    kableExtra::row_spec(
+      0,
+      bold = TRUE,
+      color = "white",
+      background = "#17365D"
+    ) %>%
+    kableExtra::add_header_above(
+      c(
+        "Información del período" = 2,
+        "Valoración a coste amortizado" = 5
+      ),
+      bold = TRUE
+    )
+}
+
+```
+
+```{r, results='asis'}
+cat("\\begingroup\n")
+cat("\\renewcommand{\\arraystretch}{0.80}\n")
+cat("\\setlength{\\tabcolsep}{3pt}\n")
+cat("\\setlength{\\LTpre}{2pt}\n")
+cat("\\setlength{\\LTpost}{5pt}\n")
+
+for (i in seq_along(tablas_amortizacion)) {
+  
+  tabla_pdf <- formatear_amortizacion(
+    tablas_amortizacion[[i]],
+    numero = i
+  )
+  
+  cat(as.character(tabla_pdf), "\n\n")
+}
+
+cat("\\endgroup\n")
 ```
 
 ## Bibliografía

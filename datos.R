@@ -167,7 +167,7 @@ print(cartera_bonos %>%
 construir_tabla_amortizacion <- function(isin, estado, cupon_nominal, freq, 
                                          fecha_venc, precio_sucio, y0, 
                                          fecha_val = as.Date("2026-09-30"), 
-                                         vn = 1000) {
+                                         vn = 100) {
   
   cupon_nominal <- as.numeric(cupon_nominal)
   if (cupon_nominal > 1) cupon_nominal <- cupon_nominal / 100
@@ -228,27 +228,20 @@ construir_tabla_amortizacion <- function(isin, estado, cupon_nominal, freq,
   
   return(tabla)
 }
-cartera_bonos <- cartera_bonos %>%
-  mutate(
-    Tabla_CA = pmap(
-      list(ISIN, Estado, Cupon_Nominal, Periodicidad, 
-           Fecha_Vencimiento, Precio_Sucio, TIR_y0),
-      ~ construir_tabla_amortizacion(
-        isin          = ..1,
-        estado        = ..2,
-        cupon_nominal = ..3,
-        freq          = ..4,
-        fecha_venc    = ..5,
-        precio_sucio  = ..6,
-        y0            = ..7,
-        fecha_val     = fecha_valoracion,
-        vn            = 1000
-      )
-    ) %>% set_names(ISIN) # Asigna el ISIN como nombre de cada sub-tabla
-  )
-
-# 2. Extraer la lista nombrada para acceso directo
-tablas_amortizacion <- cartera_bonos$Tabla_CA
+tablas_amortizacion <- pmap(
+  list(
+    isin = cartera_bonos$ISIN,
+    estado = cartera_bonos$Estado,
+    cupon_nominal = cartera_bonos$Cupon_Nominal,
+    freq = cartera_bonos$Periodicidad,
+    fecha_venc = cartera_bonos$Fecha_Vencimiento,
+    precio_sucio = cartera_bonos$Precio_Sucio,
+    y0 = cartera_bonos$TIR_y0
+  ),
+  construir_tabla_amortizacion,
+  fecha_val = fecha_valoracion,
+  vn = 100
+)
 ################################################################################
 
 raw_eiopa <- read_excel(
