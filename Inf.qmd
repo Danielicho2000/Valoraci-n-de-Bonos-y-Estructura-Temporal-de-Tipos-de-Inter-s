@@ -33,25 +33,25 @@ Conectar los fundamentos de la matemática financiera con los marcos regulatorio
 
 Para la realización del proyecto, la fecha de valoración de referencia se ha fijado en el 30 de septiembre de 2026 (2026-09-30). La cartera está integrada por seis bonos soberanos reales seleccionados de acuerdo con los criterios regulatorios exigidos (mínimo 10 años de plazo residual al corte) y clasificados en tres niveles de riesgo:
 
--   **Bonos A (Referencia / Bajo Riesgo - Alemania):**
+- **Bonos A (Referencia / Bajo Riesgo - Alemania):**
 
-    -   `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA, precio limpio de 105.06 y cupón corrido de 1.0247.
+  - `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA, precio limpio de 105.06 y cupón corrido de 1.0247.
 
-    -   `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA, precio limpio de 103.53 y cupón corrido de 2.9479.
+  - `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA, precio limpio de 103.53 y cupón corrido de 2.9479.
 
 <!-- -->
 
--   **Bonos B (Soberano Periférico - Italia):**
+- **Bonos B (Soberano Periférico - Italia):**
 
-    -   `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+, precio limpio de 94.55 y cupón corrido de 0.3565.
+  - `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+, precio limpio de 94.55 y cupón corrido de 0.3565.
 
-    -   `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+, precio limpio de 84.53 y cupón corrido de 0.2363.
+  - `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+, precio limpio de 84.53 y cupón corrido de 0.2363.
 
--   **Bonos C (Mercado Emergente - Colombia en EUR):**
+- **Bonos C (Mercado Emergente - Colombia en EUR):**
 
-    -   `XS3239891503` (Colombia - Global EUR): Emitido el 2025-11-26 con vencimiento el 2038-11-26, cupón anual del 6.50%, rating BB+, precio limpio de 97.793 y cupón corrido de 5.4849.
+  - `XS3239891503` (Colombia - Global EUR): Emitido el 2025-11-26 con vencimiento el 2038-11-26, cupón anual del 6.50%, rating BB+, precio limpio de 97.793 y cupón corrido de 5.4849.
 
-    -   `XS3183160236` (Colombia - Global EUR): Emitido el 2025-09-19 con vencimiento el 2036-02-19, cupón anual del 5.625%, rating BB+, precio limpio de 94.95 y cupón corrido de 3.4366.
+  - `XS3183160236` (Colombia - Global EUR): Emitido el 2025-09-19 con vencimiento el 2036-02-19, cupón anual del 5.625%, rating BB+, precio limpio de 94.95 y cupón corrido de 3.4366.
 
 ------------------------------------------------------------------------
 
@@ -539,7 +539,7 @@ for (i in seq_along(tablas_amortizacion)) {
 cat("\\endgroup\n")
 ```
 
-### Fase 2: Valoración a precio de mercado con la curva EIOPA
+### Valoración a precio de mercado con la curva EIOPA
 
 En la parte anterior se valoró cada bono a **coste amortizado** (NIIF 9), usando su TIR de adquisición, que queda fija y no depende de los movimientos del mercado. En esta parte se valora la cartera a **valor razonable** (*mark-to-market*), como exige el balance económico de Solvencia II. Para ello se descuentan los flujos futuros de cada bono con la estructura temporal de tipos de interés libre de riesgo publicada por la EIOPA.
 
@@ -658,7 +658,7 @@ Dentro de cada emisor, el bono de mayor plazo presenta el mayor spread (Italia 2
 
 La descomposición del valor indica que la parte atribuible al riesgo de crédito, $V^{VR}(0) - P^{\text{mercado}}$, es de apenas el 0,1 % y el 1,3 % del valor libre de riesgo en los Bunds, del 10,1 % y el 14,7 % en los BTP, y del 17,8 % y el 22,8 % en los bonos colombianos. Así, en los bonos de peor calificación una parte considerable de la diferencia entre el valor libre de riesgo y el valor de mercado se debe al riesgo de crédito y no solo al de tipos de interés.
 
-### Fase 3: Análisis de sensibilidad y riesgo de tipo de interés
+### Análisis de sensibilidad y riesgo de tipo de interés
 
 Una vez valorada la cartera, interesa medir **cuánto cambia su valor cuando se mueven los tipos de interés**. Para ello se calculan, para cada bono, tres medidas de sensibilidad, tomando como tasa de descuento su rendimiento a vencimiento $y$ en la fecha de valoración (la TIR obtenida en la valoración a coste amortizado).
 
@@ -793,24 +793,26 @@ La Tabla 11 recoge la variación del precio ante desplazamientos paralelos de ±
 
 El desarrollo de Taylor de segundo orden reproduce con gran precisión la revaloración completa: el error es de 0,014 puntos porcentuales para la cartera (alrededor del 0,15 % de la variación total) y no supera 0,03 puntos porcentuales en ningún bono. El error es mayor en los bonos con mayor convexidad y su signo se invierte entre los dos escenarios, lo que es consistente con el término de tercer orden que el desarrollo omite.
 
+## Fase 3: Modelización Estocástica del tipo de Interés
+
 ## Bibliografía
 
--   **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
+- **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
 
--   **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
+- **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
 
--   **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
+- **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
 
--   **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
+- **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
 
--   **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
+- **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
 
--   **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
+- **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
 
--   [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
+- [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
 
--   **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
+- **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
 
--   **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
+- **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
 
--   **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>
+- **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>

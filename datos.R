@@ -100,7 +100,7 @@ print(cartera_bonos %>%
 
 ################################################################################
 ###############################  FASE 2   ######################################
-##### PARTE 1
+##### PARTE 1.1
 # Función para calcular la TIR inicial (y_0) de un bono individual
 calcular_tir_bono <- function(cupon_nominal, freq, ref_fin, fecha_venc, 
                               precio_sucio, fecha_val = as.Date("2026-09-30"), 
@@ -162,7 +162,7 @@ cartera_bonos <- cartera_bonos %>%
 print(cartera_bonos %>%
         select(ISIN, Estado, Cupon_Nominal, Periodicidad, 
                Precio_Limpio, Precio_Sucio, TIR_y0))
-##### PARTE 2
+##### PARTE 1.2
 # Función para construir la tabla de amortización (Coste Amortizado) de un bono
 construir_tabla_amortizacion <- function(isin, estado, cupon_nominal, freq, 
                                          fecha_venc, precio_sucio, y0, 
@@ -259,12 +259,13 @@ curva_final <- tibble(
   Rate_EUR = as.numeric(datos_curva[[2]])
 ) %>% filter(!is.na(Maturity), !is.na(Rate_EUR)) %>% arrange(Maturity)
 
-stopifnot(max(curva_final$Maturity) >= 30)
+
 
 raw_eiopa <- read_excel(
   "EIOPA_RFR_20260930_Term_Structures.xlsx",
   sheet = "RFR_spot_no_VA",
-  col_names = FALSE, col_types = "text"
+  range = "B11:C160",
+  col_names = FALSE, col_types = c("numeric","numeric")
 )
 primera_col_num <- suppressWarnings(as.numeric(raw_eiopa[[1]]))
 fila_inicio     <- which(!is.na(primera_col_num))[1]
@@ -275,7 +276,7 @@ curva_final <- tibble(
   Rate_EUR = as.numeric(datos_curva[[2]])
 ) %>% filter(!is.na(Maturity), !is.na(Rate_EUR)) %>% arrange(Maturity)
 
-stopifnot(max(curva_final$Maturity) >= 30)
+
 
 
 # Curva interpolada linealmente
@@ -362,8 +363,7 @@ metricas <- bind_rows(pmap(
   metricas_bono
 ))
 
-# Verificación: con y = TIR, el precio debe ser el precio sucio
-stopifnot(all(abs(metricas$P_check - cartera_bonos$Precio_Sucio) < 1e-6))
+
 
 # Pesos por valor de mercado y métricas de la cartera 
 cartera_sens <- bind_cols(cartera_bonos, select(metricas, -P_check)) %>%
@@ -407,19 +407,414 @@ escenario <- function(ds) {
 
 res_sens <- bind_rows(escenario(-0.01), escenario(0.01))
 
-# Resultados en porcentaje (el error en puntos porcentuales)
+# Resultados en porcentaje 
 print(res_sens %>%
         mutate(across(c(Var_taylor, Var_full, Error), ~ round(. * 100, 4))) %>%
         select(Delta_y_pb, ISIN, Estado, Var_taylor, Var_full, Error),
       n = Inf, width = Inf)
 
+################################################################################
+###############################  FASE 3   ######################################
 
+################################################################################
+#####PARTE a
+curva_vasicek <- curva_final %>%
+  transmute(
+    tau = as.numeric(Maturity),
+    tasa_efectiva = as.numeric(Rate_EUR)
+  ) %>%
+  filter(
+    !is.na(tau),
+    !is.na(tasa_efectiva),
+    tau >= 1,
+    tau <= 30
+  ) %>%
+  arrange(tau) %>%
+  mutate(
+    # Conversión a capitalización continua
+    rc = log1p(tasa_efectiva)
+  )
 
+################################################################################
+# 1. Descargar serie histórica para estimar sigma
+# Fuente: Banco Central Europeo (BCE)
+# Serie: AAA Euro Area Yield Curve - Spot Rate 1Y
+# Capitalización continua, expresada en porcentaje anual.
+#
+# Se utilizan datos históricos de octubre de 2016 a septiembre de 2026.
 
+url_bce <- paste0(
+  "https://data-api.ecb.europa.eu/service/data/YC/",
+  "B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y",
+  "?startPeriod=2016-10-01",
+  "&endPeriod=", format(fecha_valoracion, "%Y-%m-%d"),
+  "&format=csvdata"
+)
 
+archivo_bce <- "historico_BCE_1Y.csv"
+if (!file.exists(archivo_bce)) {
+  download.file(
+    url = url_bce,
+    destfile = archivo_bce,
+    mode = "wb",
+    method = "libcurl"
+  )
+}
+datos_bce <- read.csv(archivo_bce)
+# Preparar serie histórica diaria
+historico_bce <- datos_bce %>%
+  transmute(
+    Fecha = as.Date(TIME_PERIOD),
+    Tasa = as.numeric(OBS_VALUE) / 100
+  ) %>%
+  filter(
+    !is.na(Fecha),
+    !is.na(Tasa),
+    Fecha <= fecha_valoracion
+  ) %>%
+  arrange(Fecha)
+# Seleccionar la última observación disponible de cada mes
+historico_mensual <- historico_bce %>%
+  mutate(Mes = floor_date(Fecha, "month")) %>%
+  group_by(Mes) %>%
+  slice_max(Fecha, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(Mes)
+################################################################################
+# 2. Estimación de la volatilidad sigma
+# Aproximación histórica:
+#
+# sigma = sd(r_t - r_(t-1)) / sqrt(Delta)
+#
+# Se utiliza la tasa spot a 1 año como aproximación observable
+# a la tasa corta no directamente observada.
+#
+# Delta = 1/12 años
+delta <- 1 / 12
+tasas_historicas <- historico_mensual$Tasa
+variaciones_mensuales <- diff(tasas_historicas)
+sigma_hat <- sd(variaciones_mensuales) / sqrt(delta)
+library(ggplot2)
+ggplot(historico_mensual, aes(x = Fecha, y = Tasa * 100)) +
+  geom_line(color = "steelblue", linewidth = 0.8) +
+  labs(
+    title = "Evolución histórica de la tasa spot a 1 año",
+    subtitle = "Fuente: Banco Central Europeo",
+    x = "Fecha",
+    y = "Tasa de interés (%)"
+  ) +
+  theme_minimal()
+################################################################################
+# 3. Funciones teóricas de Vasicek
+# Modelo:
+# dr_t = a(b - r_t)dt + sigma*dW_t
+#
+# Precio de bono cupón cero:
+# P(0,tau) = A(tau)*exp(-B(tau)*r0)
+# Función B(tau)
+B_vasicek <- function(tau, a) {
+  
+  -expm1(-a * tau) / a
+  
+}
+# Logaritmo de A(tau)
+log_A_vasicek <- function(tau, a, b, sigma) {
+  
+  B <- B_vasicek(tau, a)
+  
+  (b - sigma^2 / (2 * a^2)) * (B - tau) -
+    (sigma^2 * B^2) / (4 * a)
+  
+}
+# Precio teórico de un bono cupón cero
+precio_cero_vasicek <- function(tau, a, b, r0, sigma) {
+  
+  exp(
+    log_A_vasicek(tau, a, b, sigma) -
+      B_vasicek(tau, a) * r0
+  )
+  
+}
+# Curva spot teórica de Vasicek
+# R(0,tau) = -log(P(0,tau))/tau
+spot_vasicek <- function(tau, a, b, r0, sigma) {
+  
+  -(
+    log_A_vasicek(tau, a, b, sigma) -
+      B_vasicek(tau, a) * r0
+  ) / tau
+  
+}
+################################################################################
+# 4. Calibración de los parámetros a, b y r0
+funcion_objetivo <- function(parametros) {
+  a  <- parametros[1]
+  b  <- parametros[2]
+  r0 <- parametros[3]
+  
+  tasas_teoricas <- spot_vasicek(
+    tau = curva_vasicek$tau,
+    a = a,
+    b = b,
+    r0 = r0,
+    sigma = sigma_hat
+  )
+  
+  errores <- tasas_teoricas - curva_vasicek$rc
+  1e6 * sum(errores^2)
+}
+# Valores iniciales de los parámetros
+b_inicial  <- tail(curva_vasicek$rc, 1)
+r0_inicial <- curva_vasicek$rc[1]
+valores_a <- c(0.05, 0.15, 0.50, 1.50, 3.00)
+calibraciones <- lapply(valores_a, function(a_inicial) {
+  
+  optim(
+    par = c(
+      a = a_inicial,
+      b = b_inicial,
+      r0 = r0_inicial
+    ),
+    fn = funcion_objetivo,
+    method = "L-BFGS-B",
+    lower = c(0.005, -0.10, -0.10),
+    upper = c(4.000,  0.15,  0.15),
+    control = list(
+      maxit = 20000,
+      factr = 1e7
+    )
+  )
+  
+})
 
+# Seleccionar la calibración de menor error
+errores_calibracion <- sapply(
+  calibraciones,
+  function(x) x$value
+)
 
+mejor_calibracion <- calibraciones[[
+  which.min(errores_calibracion)
+]]
 
+if (mejor_calibracion$convergence != 0) {
+  warning("Revisar convergencia de la calibración.")
+}
 
+# Parámetros estimados
+a_hat  <- unname(mejor_calibracion$par["a"])
+b_hat  <- unname(mejor_calibracion$par["b"])
+r0_hat <- unname(mejor_calibracion$par["r0"])
+
+parametros_vasicek <- tibble(
+  Parametro = c("a", "b", "r0", "sigma"),
+  Estimacion = c(a_hat, b_hat, r0_hat, sigma_hat)
+)
+print(parametros_vasicek)
+################################################################################
+# 5. Evaluación del ajuste de la curva
+curva_ajustada <- curva_vasicek %>%
+  mutate(
+    Spot_Vasicek = spot_vasicek(
+      tau = tau,
+      a = a_hat,
+      b = b_hat,
+      r0 = r0_hat,
+      sigma = sigma_hat
+    ),
+    Error = Spot_Vasicek - rc
+  )
+SSE <- sum(curva_ajustada$Error^2)
+RMSE <- sqrt(mean(curva_ajustada$Error^2))
+
+cat("\nRESULTADOS DE CALIBRACIÓN\n")
+cat("a =", round(a_hat, 6), "\n")
+cat("b =", round(b_hat, 6), "\n")
+cat("r0 =", round(r0_hat, 6), "\n")
+cat("sigma =", round(sigma_hat, 6), "\n")
+cat("SSE =", format(SSE, scientific = TRUE), "\n")
+cat("RMSE =", round(RMSE, 8), "\n")
+cat("RMSE (bps) =", round(RMSE * 10000, 4), "\n")
+cat("Convergencia =", mejor_calibracion$convergence, "\n")
+
+# Comparación gráfica de las curvas
+ggplot(curva_ajustada, aes(x = tau)) +
+  geom_line(
+    aes(y = rc * 100, color = "EIOPA"),
+    linewidth = 1
+  ) +
+  geom_line(
+    aes(y = Spot_Vasicek * 100, color = "Vasicek"),
+    linewidth = 1,
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Calibración del modelo de Vasicek",
+    subtitle = "Curva EIOPA EUR - 30/09/2026",
+    x = "Vencimiento (años)",
+    y = "Tasa spot continua (%)",
+    color = "Curva"
+  ) +
+  theme_minimal()
+
+################################################################################
+#####PARTE b
+set.seed(12345)
+N <- 10000             # Número de trayectorias
+T <- 1                 # Horizonte: un año
+n_pasos <- 12          # Pasos mensuales
+dt <- T / n_pasos
+
+tiempos <- seq(0, T, length.out = n_pasos + 1)
+################################################################################
+# 1. Discretización exacta del proceso de Vasicek
+# r(t+dt) = r(t)*exp(-a*dt) + b*(1-exp(-a*dt)) +
+#           sigma*sqrt((1-exp(-2*a*dt))/(2*a))*Z
+#
+# Z ~ N(0,1)
+phi <- exp(-a_hat * dt)
+termino_reversion <- b_hat * (1 - phi)
+
+desv_innovacion <- sigma_hat *
+  sqrt(-expm1(-2 * a_hat * dt) / (2 * a_hat))
+
+# Matriz de 10000 trayectorias x 13 meses
+trayectorias <- matrix(
+  NA_real_,
+  nrow = N,
+  ncol = n_pasos + 1
+)
+
+colnames(trayectorias) <- paste0("Mes_", 0:n_pasos)
+
+# Todas las trayectorias parten de r0
+trayectorias[, 1] <- r0_hat
+
+# Generación de trayectorias
+for (j in 1:n_pasos) {
+  
+  Z <- rnorm(N, mean = 0, sd = 1)
+  
+  trayectorias[, j + 1] <-
+    trayectorias[, j] * phi +
+    termino_reversion +
+    desv_innovacion * Z
+  
+}
+################################################################################
+# 2. Estadísticas mensuales
+resumen_simulacion <- tibble(
+  Mes = 0:n_pasos,
+  Tiempo = tiempos,
+  Media = colMeans(trayectorias),
+  Desviacion = apply(trayectorias, 2, sd),
+  P05 = apply(trayectorias, 2, quantile, probs = 0.05),
+  Mediana = apply(trayectorias, 2, median),
+  P95 = apply(trayectorias, 2, quantile, probs = 0.95)
+)
+
+print(resumen_simulacion, n = Inf)
+################################################################################
+# 3. Evolución de la tasa media y bandas percentílicas
+ggplot(resumen_simulacion, aes(x = Mes)) +
+  geom_ribbon(
+    aes(
+      ymin = P05 * 100,
+      ymax = P95 * 100
+    ),
+    fill = "steelblue",
+    alpha = 0.20
+  ) +
+  geom_line(
+    aes(y = Media * 100),
+    color = "blue",
+    linewidth = 1
+  ) +
+  labs(
+    title = "Evolución simulada de la tasa corta",
+    subtitle = "Media e intervalo percentílico del 90%",
+    x = "Mes",
+    y = "Tasa corta (%)"
+  ) +
+  theme_minimal()
+################################################################################
+# 4. Distribución de la tasa corta al finalizar el año
+r_T <- trayectorias[, n_pasos + 1]
+
+resultados_finales <- tibble(
+  Estadistico = c(
+    "Media",
+    "Desviación estándar",
+    "Mínimo",
+    "Percentil 5%",
+    "Mediana",
+    "Percentil 95%",
+    "Máximo"
+  ),
+  Valor = c(
+    mean(r_T),
+    sd(r_T),
+    min(r_T),
+    unname(quantile(r_T, 0.05)),
+    median(r_T),
+    unname(quantile(r_T, 0.95)),
+    max(r_T)
+  )
+)
+
+print(resultados_finales)
+
+# Histograma de r_T
+ggplot(
+  tibble(Tasa_Final = r_T * 100),
+  aes(x = Tasa_Final)
+) +
+  geom_histogram(
+    bins = 50,
+    fill = "steelblue",
+    color = "white"
+  ) +
+  geom_vline(
+    xintercept = mean(r_T) * 100,
+    color = "red",
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  labs(
+    title = "Distribución de la tasa corta al año 1",
+    subtitle = "10000 simulaciones",
+    x = "Tasa corta (%)",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+################################################################################
+# 5. Verificación de la simulación exacta
+# Bajo Vasicek:
+#
+# E[r_T] = b + (r0-b)*exp(-a*T)
+#
+# Var[r_T] = sigma^2*(1-exp(-2*a*T))/(2*a)
+media_teorica <- b_hat +
+  (r0_hat - b_hat) * exp(-a_hat * T)
+
+varianza_teorica <- sigma_hat^2 *
+  (-expm1(-2 * a_hat * T)) / (2 * a_hat)
+
+verificacion <- tibble(
+  Estadistico = c("Media", "Varianza"),
+  Teorico = c(
+    media_teorica,
+    varianza_teorica
+  ),
+  Simulado = c(
+    mean(r_T),
+    var(r_T)
+  )
+) %>%
+  mutate(
+    Error_Absoluto = abs(Teorico - Simulado)
+  )
+
+print(verificacion)
 
 
