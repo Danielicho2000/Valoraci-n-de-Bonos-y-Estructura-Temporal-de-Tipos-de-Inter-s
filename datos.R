@@ -243,6 +243,7 @@ tablas_amortizacion <- pmap(
   vn = 100
 )
 ################################################################################
+#PARTE 2 FASE 2*************************************************
 
 raw_eiopa <- read_excel(
   "EIOPA_RFR_20260930_Term_Structures.xlsx",
@@ -259,3 +260,166 @@ curva_final <- tibble(
 ) %>% filter(!is.na(Maturity), !is.na(Rate_EUR)) %>% arrange(Maturity)
 
 stopifnot(max(curva_final$Maturity) >= 30)
+
+raw_eiopa <- read_excel(
+  "EIOPA_RFR_20260930_Term_Structures.xlsx",
+  sheet = "RFR_spot_no_VA",
+  col_names = FALSE, col_types = "text"
+)
+primera_col_num <- suppressWarnings(as.numeric(raw_eiopa[[1]]))
+fila_inicio     <- which(!is.na(primera_col_num))[1]
+datos_curva     <- raw_eiopa[fila_inicio:nrow(raw_eiopa), ]
+
+curva_final <- tibble(
+  Maturity = as.numeric(datos_curva[[1]]),
+  Rate_EUR = as.numeric(datos_curva[[2]])
+) %>% filter(!is.na(Maturity), !is.na(Rate_EUR)) %>% arrange(Maturity)
+
+stopifnot(max(curva_final$Maturity) >= 30)
+
+
+# Curva interpolada linealmente
+r_interp <- function(tau) approx(curva_final$Maturity, curva_final$Rate_EUR,
+                                 xout = tau, rule = 2)$y
+
+# Valor razonable con spread s 
+vv_spread <- function(s, cupon, freq, ref_fin, fecha_venc,
+                      fecha_val = fecha_valoracion, vn = 100) {
+  fechas <- rev(seq(fecha_venc, ref_fin, by = paste0("-", 12/freq, " months")))
+  tau <- as.numeric(fechas - fecha_val) / 365.25
+  ck  <- (cupon / freq) * vn
+  sum(ck / (1 + r_interp(tau) + s)^tau) + vn / (1 + r_interp(tail(tau,1)) + s)^tail(tau,1)
+}
+
+# Spread s tal que V_VR(s) = precio sucio de mercado 
+spread_bono <- function(cupon, freq, ref_fin, fecha_venc, precio_sucio) {
+  uniroot(
+    function(s) vv_spread(s, cupon, freq, ref_fin, fecha_venc) - precio_sucio,
+    interval = c(-0.05, 0.30), tol = 1e-10
+  )$root
+}
+
+# Aplicar a toda la cartera
+cartera_bonos <- cartera_bonos %>%
+  rowwise() %>%
+  mutate(
+    Spread_s      = spread_bono(Cupon_Nominal, Periodicidad, Ref_Fin,
+                                Fecha_Vencimiento, Precio_Sucio),
+    Spread_bps    = round(Spread_s * 1e4, 1),
+    # Valor razonable solo con la curva libre de riesgo (s = 0)
+    V_VR_0        = vv_spread(0, Cupon_Nominal, Periodicidad, Ref_Fin,
+                              Fecha_Vencimiento),
+    # Lo que corresponde al riesgo de crédito
+    Parte_credito = V_VR_0 - Precio_Sucio
+  ) %>%
+  ungroup()
+
+print(cartera_bonos %>%
+        select(ISIN, Estado, Rating, Precio_Sucio, V_VR_0, Spread_bps, Parte_credito))
+
+# Verificación: V_VR(s) debe reproducir el precio sucio
+#verif <- cartera_bonos %>%
+#  rowwise() %>%
+#  mutate(err = vv_spread(Spread_s, Cupon_Nominal, Periodicidad, Ref_Fin,
+#                         Fecha_Vencimiento) - Precio_Sucio) %>%
+#  pull(err)
+#stopifnot(all(abs(verif) < 1e-6))
+
+
+
+################################################################################
+#PARTE 3 FASE 2*************************************************
+# Análisis de sensibilidad y riesgo de tipo de interés
+
+# Flujos de cada bono
+flujos_bono <- function(cupon, freq, ref_fin, fecha_venc,
+                        fecha_val = fecha_valoracion, vn = 100) {
+  fechas <- rev(seq(fecha_venc, ref_fin, by = paste0("-", 12/freq, " months")))
+  tau <- as.numeric(fechas - fecha_val) / 365.25
+  cf  <- rep((cupon / freq) * vn, length(tau))
+  cf[length(cf)] <- cf[length(cf)] + vn
+  tibble(tau = tau, cf = cf)
+}
+
+# Duración de Macaulay
+metricas_bono <- function(cupon, freq, ref_fin, fecha_venc, y) {
+  fl <- flujos_bono(cupon, freq, ref_fin, fecha_venc)
+  pv <- fl$cf / (1 + y)^fl$tau          # PV(C_k) descontado a la TIR
+  P  <- sum(pv)
+  D_mac <- sum(fl$tau * pv) / P
+  tibble(
+    P_check    = P,
+    D_Mac      = D_mac,
+    D_mod      = D_mac / (1 + y),
+    Convexidad = sum(fl$tau * (fl$tau + 1) * pv) / (P * (1 + y)^2)
+  )
+}
+
+metricas <- bind_rows(pmap(
+  list(cartera_bonos$Cupon_Nominal, cartera_bonos$Periodicidad,
+       cartera_bonos$Ref_Fin, cartera_bonos$Fecha_Vencimiento,
+       cartera_bonos$TIR_y0),
+  metricas_bono
+))
+
+# Verificación: con y = TIR, el precio debe ser el precio sucio
+stopifnot(all(abs(metricas$P_check - cartera_bonos$Precio_Sucio) < 1e-6))
+
+# Pesos por valor de mercado y métricas de la cartera 
+cartera_sens <- bind_cols(cartera_bonos, select(metricas, -P_check)) %>%
+  mutate(w = Precio_Sucio / sum(Precio_Sucio))
+
+D_cartera <- sum(cartera_sens$w * cartera_sens$D_mod)
+C_cartera <- sum(cartera_sens$w * cartera_sens$Convexidad)
+
+print(cartera_sens %>%
+        select(ISIN, Estado, TIR_y0, D_Mac, D_mod, Convexidad, w),
+      n = Inf, width = Inf)
+cat("\nDuración modificada de la cartera:", round(D_cartera, 4),
+    "\nConvexidad de la cartera:", round(C_cartera, 4), "\n")
+
+# Escenarios de desplazamiento paralelo: Taylor vs revaloración completa 
+escenario <- function(ds) {
+  por_bono <- cartera_sens %>%
+    rowwise() %>%
+    mutate(
+      # Revaloración completa: curva EIOPA + ds + spread del bono
+      P_full     = vv_spread(Spread_s + ds, Cupon_Nominal, Periodicidad,
+                             Ref_Fin, Fecha_Vencimiento),
+      Var_full   = P_full / Precio_Sucio - 1,
+      # Taylor de segundo orden (ec. 6)
+      Var_taylor = -D_mod * ds + 0.5 * Convexidad * ds^2,
+      Error      = Var_taylor - Var_full
+    ) %>%
+    ungroup()
+  
+  # Cartera
+  cartera <- tibble(
+    ISIN = "Cartera", Estado = "-",
+    Var_taylor = -D_cartera * ds + 0.5 * C_cartera * ds^2,
+    Var_full   = sum(por_bono$P_full) / sum(por_bono$Precio_Sucio) - 1,
+    Error      = Var_taylor - Var_full
+  )
+  
+  bind_rows(select(por_bono, ISIN, Estado, Var_taylor, Var_full, Error), cartera) %>%
+    mutate(Delta_y_pb = ds * 1e4)
+}
+
+res_sens <- bind_rows(escenario(-0.01), escenario(0.01))
+
+# Resultados en porcentaje (el error en puntos porcentuales)
+print(res_sens %>%
+        mutate(across(c(Var_taylor, Var_full, Error), ~ round(. * 100, 4))) %>%
+        select(Delta_y_pb, ISIN, Estado, Var_taylor, Var_full, Error),
+      n = Inf, width = Inf)
+
+
+
+
+
+
+
+
+
+
+
