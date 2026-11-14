@@ -33,25 +33,25 @@ Conectar los fundamentos de la matemática financiera con los marcos regulatorio
 
 Para la realización del proyecto, la fecha de valoración de referencia se ha fijado en el 30 de septiembre de 2026 (2026-09-30). La cartera está integrada por seis bonos soberanos reales seleccionados de acuerdo con los criterios regulatorios exigidos (mínimo 10 años de plazo residual al corte) y clasificados en tres niveles de riesgo:
 
-- **Bonos A (Referencia / Bajo Riesgo - Alemania):**
+-   **Bonos A (Referencia / Bajo Riesgo - Alemania):**
 
-  - `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA, precio limpio de 105.06 y cupón corrido de 1.0247.
+    -   `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA, precio limpio de 105.06 y cupón corrido de 1.0247.
 
-  - `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA, precio limpio de 103.53 y cupón corrido de 2.9479.
+    -   `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA, precio limpio de 103.53 y cupón corrido de 2.9479.
 
 <!-- -->
 
-- **Bonos B (Soberano Periférico - Italia):**
+-   **Bonos B (Soberano Periférico - Italia):**
 
-  - `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+, precio limpio de 94.55 y cupón corrido de 0.3565.
+    -   `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+, precio limpio de 94.55 y cupón corrido de 0.3565.
 
-  - `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+, precio limpio de 84.53 y cupón corrido de 0.2363.
+    -   `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+, precio limpio de 84.53 y cupón corrido de 0.2363.
 
-- **Bonos C (Mercado Emergente - Colombia en EUR):**
+-   **Bonos C (Mercado Emergente - Colombia en EUR):**
 
-  - `XS3239891503` (Colombia - Global EUR): Emitido el 2025-11-26 con vencimiento el 2038-11-26, cupón anual del 6.50%, rating BB+, precio limpio de 97.793 y cupón corrido de 5.4849.
+    -   `XS3239891503` (Colombia - Global EUR): Emitido el 2025-11-26 con vencimiento el 2038-11-26, cupón anual del 6.50%, rating BB+, precio limpio de 97.793 y cupón corrido de 5.4849.
 
-  - `XS3183160236` (Colombia - Global EUR): Emitido el 2025-09-19 con vencimiento el 2036-02-19, cupón anual del 5.625%, rating BB+, precio limpio de 94.95 y cupón corrido de 3.4366.
+    -   `XS3183160236` (Colombia - Global EUR): Emitido el 2025-09-19 con vencimiento el 2036-02-19, cupón anual del 5.625%, rating BB+, precio limpio de 94.95 y cupón corrido de 3.4366.
 
 ------------------------------------------------------------------------
 
@@ -1118,26 +1118,162 @@ ggplot(resumen_simulacion, aes(x = Mes)) +
 
 Se puede evidenciar una alza en el valor porcentual de la Tasa corta durante el año, concluyendo que el modelo de Vasicek proyecta una tendencia creciente de las tasas de interés hacia su nivel de equilibrio de largo plazo. Este comportamiento se explica porque la tasa corta inicial estimada $r_0=2.7337\%$ es inferior al nivel de reversión $b=3.5342\%$.
 
+### Revaloración a un año
+
+Una vez obtenidas las $N = 10\,000$ trayectorias simuladas de la tasa corta al horizonte $T = 1$ año ($t = \text{2027-09-30}$), se reconstruye la estructura temporal de tipos de interés para cada escenario mediante la solución analítica del modelo de Vasicek. Dado que todos los títulos de la cartera vencen a partir de 2036, ninguno alcanza su vencimiento durante el primer año, reduciéndose en exactamente un año el plazo residual $\tau_{k,1} = \tau_{k,0} - 1$ de todos los flujos futuros.
+
+Para garantizar la coherencia con la valoración de mercado de la Fase 2, las tasas spot continuas simuladas $r^c(1, \tau)$ se transforman a tasas efectivas anuales mediante $r(1, \tau) = e^{r^c(1, \tau)} - 1$, y cada bono se descuenta manteniendo constante su diferencial de crédito calibrado $s_i$:
+
+$$
+V_i^{(j)}(1) = \sum_{k} \frac{C_{i,k}}{\left(1 + r^{(j)}(1, \tau_{k,1}) + s_i\right)^{\tau_{k,1}}} + \frac{VN}{\left(1 + r^{(j)}(1, \tau_{n,1}) + s_i\right)^{\tau_{n,1}}}, \qquad j = 1, \dots, 10\,000.
+$$
+
+Sumando el valor de los seis bonos en cada trayectoria se obtiene el valor simulado de la cartera $V_1^{(j)}$ y la distribución de la variación de valor $\Delta V^{(j)} = V_1^{(j)} - V_0$.
+
+```{r}
+# 1. Extraer el vector de tasas cortas al final del año (T = 1) desde trayectorias
+r_T <- trayectorias[, n_pasos + 1]
+
+# 2. Revaloración a un año (Parte c)
+fecha_horizonte <- fecha_valoracion %m+% years(1)
+
+flujos_futuros_T1 <- function(cupon, freq, ref_fin, fecha_venc,
+                              fecha_h = fecha_horizonte, vn = 100) {
+  paso_meses   <- paste0("-", 12 / freq, " months")
+  fechas_todas <- rev(seq(from = fecha_venc, to = ref_fin, by = paso_meses))
+  fechas_fut   <- fechas_todas[fechas_todas > fecha_h]
+  
+  tau_1 <- as.numeric(fechas_fut - fecha_h) / 365.25
+  cf    <- rep((cupon / freq) * vn, length(tau_1))
+  cf[length(cf)] <- cf[length(cf)] + vn
+  
+  tibble(tau_1 = tau_1, cf = cf)
+}
+
+V0_cartera <- sum(cartera_bonos$Precio_Sucio)
+valores_T1_bonos <- matrix(NA_real_, nrow = N, ncol = nrow(cartera_bonos))
+
+for (i in seq_len(nrow(cartera_bonos))) {
+  fl <- flujos_futuros_T1(
+    cupon      = cartera_bonos$Cupon_Nominal[i],
+    freq       = cartera_bonos$Periodicidad[i],
+    ref_fin    = cartera_bonos$Ref_Fin[i],
+    fecha_venc = cartera_bonos$Fecha_Vencimiento[i]
+  )
+  s_i <- cartera_bonos$Spread_s[i]
+  
+  rc_mat <- outer(r_T, fl$tau_1, function(r_val, tau_val) {
+    spot_vasicek(tau = tau_val, a = a_hat, b = b_hat, r0 = r_val, sigma = sigma_hat)
+  })
+  r_efec_mat    <- expm1(rc_mat)
+  tasas_totales <- sweep(r_efec_mat, 2, s_i, "+")
+  df_mat        <- sweep(tasas_totales, 2, fl$tau_1, function(r_tot, t_val) (1 + r_tot)^(-t_val))
+  
+  valores_T1_bonos[, i] <- as.vector(df_mat %*% fl$cf)
+}
+
+VT_cartera  <- rowSums(valores_T1_bonos)
+Delta_V     <- VT_cartera - V0_cartera
+Delta_V_pct <- (Delta_V / V0_cartera) * 100
+
+resumen_delta_V <- tibble(
+  Estadistico = c("Media", "Desviación estándar", "Percentil 0,5 %", 
+                  "Percentil 5 %", "Mediana", "Percentil 95 %", "Percentil 99,5 %"),
+  `ΔV (EUR)`  = sprintf("%.3f", c(mean(Delta_V), sd(Delta_V), quantile(Delta_V, 0.005),
+                                  quantile(Delta_V, 0.05), median(Delta_V), quantile(Delta_V, 0.95),
+                                  quantile(Delta_V, 0.995))),
+  `ΔV (%)`    = sprintf("%.3f", c(mean(Delta_V_pct), sd(Delta_V_pct), quantile(Delta_V_pct, 0.005),
+                                  quantile(Delta_V_pct, 0.05), median(Delta_V_pct), quantile(Delta_V_pct, 0.95),
+                                  quantile(Delta_V_pct, 0.995)))
+)
+
+knitr::kable(
+  resumen_delta_V,
+  format = "latex",
+  booktabs = TRUE,
+  linesep = "",
+  align = c("l", "r", "r"),
+  caption = "Resumen estadístico de la distribución simulada de la variación del valor de la cartera (ΔV) a un año"
+) %>%
+  kableExtra::kable_styling(latex_options = c("scale_down", "hold_position"), font_size = 8) %>%
+  kableExtra::row_spec(0, bold = TRUE, color = "white", background = "#17365D")
+```
+
+### Medidas de riesgo
+
+A partir de la variable de pérdida definida como $L = -\Delta V$, se calculan el Valor en Riesgo ($\text{VaR}_{99,5\%}$) y el Valor en Riesgo de Cola ($\text{TVaR}_{99,5\%}$) al nivel de confianza exigido por Solvencia II, contrastándolos con los escenarios deterministas de desplazamiento paralelo de $\pm 100$ pb evaluados en la Fase 2.
+
+```{r}
+# 3. Medidas de riesgo (Parte d)
+Perdida_EUR <- -Delta_V
+Perdida_Pct <- -Delta_V_pct
+alpha       <- 0.995
+
+VaR_995_EUR  <- unname(quantile(Perdida_EUR, probs = alpha))
+TVaR_995_EUR <- mean(Perdida_EUR[Perdida_EUR >= VaR_995_EUR])
+VaR_995_Pct  <- unname(quantile(Perdida_Pct, probs = alpha))
+TVaR_995_Pct <- mean(Perdida_Pct[Perdida_Pct >= VaR_995_Pct])
+
+p_det_100              <- res_sens %>% filter(ISIN == "Cartera", Delta_y_pb == 100) %>% pull(Var_full)
+perdida_det_100bps_Pct <- -p_det_100 * 100
+perdida_det_100bps_EUR <- V0_cartera * (perdida_det_100bps_Pct / 100)
+
+p_det_m100              <- res_sens %>% filter(ISIN == "Cartera", Delta_y_pb == -100) %>% pull(Var_full)
+var_det_menos100bps_Pct <- p_det_m100 * 100
+var_det_menos100bps_EUR <- V0_cartera * (var_det_menos100bps_Pct / 100)
+
+comparativa_riesgo <- tibble(
+  `Métrica / Escenario` = c(
+    "VaR 99,5 % (Simulación Vasicek T = 1)",
+    "TVaR 99,5 % (Simulación Vasicek T = 1)",
+    "Escenario determinista +100 pb (Revaloración Fase 2)",
+    "Escenario determinista -100 pb (Revaloración Fase 2)"
+  ),
+  `Pérdida absoluta (EUR)` = sprintf("%.3f", c(
+    VaR_995_EUR, TVaR_995_EUR, perdida_det_100bps_EUR, -var_det_menos100bps_EUR
+  )),
+  `Pérdida porcentual (%)` = sprintf("%.3f", c(
+    VaR_995_Pct, TVaR_995_Pct, perdida_det_100bps_Pct, -var_det_menos100bps_Pct
+  ))
+)
+
+knitr::kable(
+  comparativa_riesgo,
+  format = "latex",
+  booktabs = TRUE,
+  linesep = "",
+  align = c("l", "r", "r"),
+  caption = "Comparativa entre medidas estocásticas de riesgo (VaR y TVaR al 99,5 %) y escenarios deterministas de tipos"
+) %>%
+  kableExtra::kable_styling(latex_options = c("scale_down", "hold_position"), font_size = 8) %>%
+  kableExtra::row_spec(0, bold = TRUE, color = "white", background = "#17365D") %>%
+  kableExtra::row_spec(1:2, bold = TRUE)
+
+
+```
+
+El $\text{VaR}_{99,5\%}$ estocástico indica que, con un $99,5\,\%$ de confianza, la pérdida máxima de la cartera al cabo de un año no superará los $0,772$ EUR ($0,130\,\%$ de su valor inicial), mientras que el $\text{TVaR}_{99,5\%}$ revela que, en el $0,5\,\%$ de los peores escenarios posibles, la pérdida promedio esperada asciende a $1,000$ EUR ($0,169\,\%$).
+
 ## Bibliografía
 
-- **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
+-   **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
 
-- **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
+-   **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
 
-- **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
+-   **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
 
-- **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
+-   **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
 
-- **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
+-   **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
 
-- **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
+-   **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
 
-- [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
+-   [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
 
-- **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
+-   **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
 
-- **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
+-   **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
 
-- **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>
+-   **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>
 
-- European Central Bank (ECB) (2026). AAA Yield Curve: 1-Year Spot Rate, Euro Area. ECB Data Portal. [https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y](https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y?utm_source=chatgpt.com)
+-   European Central Bank (ECB) (2026). AAA Yield Curve: 1-Year Spot Rate, Euro Area. ECB Data Portal. [https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y](https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y?utm_source=chatgpt.com)

@@ -2,7 +2,7 @@
 # FASE 1 
 # Fecha de valoración: 2026-09-30
 # ============================================================
-library(dplyr)
+library(dplyr) 
 library(tidyr)
 library(tibble)
 library(readxl)
@@ -816,5 +816,169 @@ verificacion <- tibble(
   )
 
 print(verificacion)
+
+
+################################################################################
+##### PARTE c: Revaloración a un año (T = 1)
+################################################################################
+
+# Fecha al horizonte de 1 año (Solvencia II)
+fecha_horizonte <- fecha_valoracion %m+% years(1) # 2027-09-30
+
+# Función para extraer los flujos futuros de un bono a partir de fecha_horizonte
+flujos_futuros_T1 <- function(cupon, freq, ref_fin, fecha_venc,
+                              fecha_h = fecha_horizonte, vn = 100) {
+  paso_meses  <- paste0("-", 12 / freq, " months")
+  # secuencia de fechas de pago hasta la última fecha anterior o igual a ref_fin
+  fechas_todas <- rev(seq(from = fecha_venc, to = ref_fin, by = paso_meses))
+  
+  # filtrar únicamente los flujos estrictamente posteriores a T = 1 (2027-09-30)
+  fechas_fut <- fechas_todas[fechas_todas > fecha_h]
+  
+  tau_1 <- as.numeric(fechas_fut - fecha_h) / 365.25
+  cf    <- rep((cupon / freq) * vn, length(tau_1))
+  cf[length(cf)] <- cf[length(cf)] + vn
+  
+  tibble(tau_1 = tau_1, cf = cf)
+}
+
+# valor inicial total de la cartera en t = 0 (suma de precios sucios en base 100)
+V0_cartera <- sum(cartera_bonos$Precio_Sucio)
+
+# Matriz para almacenar el valor simulado en T = 1 de cada bono (N x 6 bonos)
+valores_T1_bonos <- matrix(NA_real_, nrow = N, ncol = nrow(cartera_bonos))
+colnames(valores_T1_bonos) <- cartera_bonos$ISIN
+
+# Revaloración vectorizada por bono para las 10,000 trayectorias de r_T
+for (i in seq_len(nrow(cartera_bonos))) {
+  
+  fl <- flujos_futuros_T1(
+    cupon      = cartera_bonos$Cupon_Nominal[i],
+    freq       = cartera_bonos$Periodicidad[i],
+    ref_fin    = cartera_bonos$Ref_Fin[i],
+    fecha_venc = cartera_bonos$Fecha_Vencimiento[i]
+  )
+  
+  s_i <- cartera_bonos$Spread_s[i]
+  
+  # 1. Reconstruir la curva spot continua de Vasicek en T = 1 para cada flujo tau_1
+  
+  rc_mat <- outer(r_T, fl$tau_1, function(r_val, tau_val) {
+    spot_vasicek(tau = tau_val, a = a_hat, b = b_hat, r0 = r_val, sigma = sigma_hat)
+  })
+  
+  # 2. Convertir de capitalización continua a efectiva anual (expm1(x) = exp(x) - 1)
+  r_efec_mat <- expm1(rc_mat)
+  
+  # 3. Factores de descuento con spread constante s_i: (1 + r_efec + s_i)^(-tau_1)
+  tasas_totales <- sweep(r_efec_mat, 2, s_i, "+")
+  df_mat        <- sweep(tasas_totales, 2, fl$tau_1, function(r_tot, t_val) (1 + r_tot)^(-t_val))
+  
+  # 4. Valor presente en T = 1 para cada trayectoria 
+  valores_T1_bonos[, i] <- as.vector(df_mat %*% fl$cf)
+}
+
+# Valor total de la cartera en T = 1 y variación de valor (Delta V)
+VT_cartera      <- rowSums(valores_T1_bonos)
+Delta_V         <- VT_cartera - V0_cartera
+Delta_V_pct     <- (Delta_V / V0_cartera) * 100
+
+# Resumen estadístico de la distribución de Delta V
+resumen_delta_V <- tibble(
+  Estadistico   = c("Media", "Desviación estándar", "Percentil 0.5%", 
+                    "Percentil 5%", "Mediana", "Percentil 95%", "Percentil 99.5%"),
+  Delta_V_EUR   = c(mean(Delta_V), sd(Delta_V), quantile(Delta_V, 0.005),
+                    quantile(Delta_V, 0.05), median(Delta_V), quantile(Delta_V, 0.95),
+                    quantile(Delta_V, 0.995)),
+  Delta_V_Pct   = c(mean(Delta_V_pct), sd(Delta_V_pct), quantile(Delta_V_pct, 0.005),
+                    quantile(Delta_V_pct, 0.05), median(Delta_V_pct), quantile(Delta_V_pct, 0.95),
+                    quantile(Delta_V_pct, 0.995))
+)
+
+print(resumen_delta_V)
+
+# Gráfico de la distribución simulada de Delta V (%)
+ggplot(tibble(Delta_V_pct = Delta_V_pct), aes(x = Delta_V_pct)) +
+  geom_histogram(bins = 60, fill = "steelblue", color = "white", alpha = 0.85) +
+  geom_vline(xintercept = mean(Delta_V_pct), color = "darkblue", linetype = "dashed", linewidth = 0.9) +
+  geom_vline(xintercept = quantile(Delta_V_pct, 0.005), color = "red", linetype = "solid", linewidth = 1) +
+  labs(
+    title = "Distribución simulada de la variación del valor de la cartera (ΔV) a 1 año",
+    subtitle = "Línea roja: Percentil 0.5% (VaR 99.5%) | Línea azul: Media",
+    x = "Variación porcentual del valor de la cartera (%)",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+
+
+################################################################################
+##### PARTE d: Medidas de riesgo (VaR 99.5% y TVaR 99.5%)
+################################################################################
+
+# Definimos la variable de pérdida L = -Delta_V (pérdidas en positivo)
+Perdida_EUR <- -Delta_V
+Perdida_Pct <- -Delta_V_pct
+
+alpha <- 0.995
+
+# Cálculo de VaR 99.5% y TVaR (Expected Shortfall) 99.5%
+VaR_995_EUR  <- unname(quantile(Perdida_EUR, probs = alpha))
+TVaR_995_EUR <- mean(Perdida_EUR[Perdida_EUR >= VaR_995_EUR])
+
+VaR_995_Pct  <- unname(quantile(Perdida_Pct, probs = alpha))
+TVaR_995_Pct <- mean(Perdida_Pct[Perdida_Pct >= VaR_995_Pct])
+
+# Extraer pérdida determinista ante +100 bps de la Fase 2 (revaloración completa)
+# Nota: Var_full ya es la variación porcentual (ej. -0.0832), la pasamos a porcentaje positivo multiplicando por 100
+p_det_100 <- res_sens %>% filter(ISIN == "Cartera", Delta_y_pb == 100) %>% pull(Var_full)
+perdida_det_100bps_Pct <- -p_det_100 * 100
+perdida_det_100bps_EUR <- V0_cartera * (perdida_det_100bps_Pct / 100)
+
+# Extraer variación ante -100 bps de la Fase 2 como referencia
+p_det_m100 <- res_sens %>% filter(ISIN == "Cartera", Delta_y_pb == -100) %>% pull(Var_full)
+var_det_menos100bps_Pct <- p_det_m100 * 100
+var_det_menos100bps_EUR <- V0_cartera * (var_det_menos100bps_Pct / 100)
+
+# Tabla comparativa: Medidas estocásticas vs Escenarios deterministas Fase 2
+comparativa_riesgo <- tibble(
+  Metrica_Escenario = c(
+    "VaR 99.5% (Simulación Vasicek T = 1)",
+    "TVaR 99.5% (Simulación Vasicek T = 1)",
+    "Escenario Determinista +100 bps (Revaloración Fase 2)",
+    "Escenario Determinista -100 bps (Revaloración Fase 2)"
+  ),
+  Perdida_Absoluta = c(
+    VaR_995_EUR,
+    TVaR_995_EUR,
+    perdida_det_100bps_EUR,
+    -var_det_menos100bps_EUR # Negativo indica ganancia
+  ),
+  Perdida_Porcentual = c(
+    VaR_995_Pct,
+    TVaR_995_Pct,
+    perdida_det_100bps_Pct,
+    -var_det_menos100bps_Pct
+  )
+)
+
+print(comparativa_riesgo)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
