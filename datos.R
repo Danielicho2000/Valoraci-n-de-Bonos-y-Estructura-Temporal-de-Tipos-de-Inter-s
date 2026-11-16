@@ -414,6 +414,188 @@ print(res_sens %>%
       n = Inf, width = Inf)
 
 ################################################################################
+#####EVOLUCIÓN TEMPORAL
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+proyectar_trayectoria_bono <- function(isin, estado, categoria, cupon_nominal, freq,
+                                       ref_fin, fecha_venc, precio_sucio, y0, spread_s,
+                                       fecha_val = fecha_valoracion, vn = 100) {
+  
+  paso_meses <- paste0("-", 12 / freq, " months")
+  
+  fechas_pago <- rev(seq(from = as.Date(fecha_venc), to = as.Date(ref_fin), by = paso_meses))
+  fechas_pago <- fechas_pago[fechas_pago > fecha_val]
+  fechas_eval <- c(fecha_val, fechas_pago)
+  c_k <- (cupon_nominal / freq) * vn
+  
+  # Función auxiliar para descontar flujos remanentes en una fecha t_eval
+  valorar_en_fecha <- function(t_eval, tasa_fn) {
+    if (t_eval >= fecha_venc) return(vn) # En el vencimiento converge al nominal (100)
+    
+    fechas_rem <- fechas_pago[fechas_pago > t_eval]
+    tau_rem <- as.numeric(fechas_rem - t_eval) / 365.25
+    
+    flujos <- rep(c_k, length(tau_rem))
+    flujos[length(flujos)] <- flujos[length(flujos)] + vn
+    
+    tasas <- tasa_fn(tau_rem)
+    sum(flujos / (1 + tasas)^tau_rem)
+  }
+  
+  map_dfr(fechas_eval, function(f_ev) {
+    v_ca <- valorar_en_fecha(f_ev, function(tau) rep(y0, length(tau)))
+    v_vr_base <- valorar_en_fecha(f_ev, function(tau) r_interp(tau) + spread_s)
+    v_vr_m100 <- valorar_en_fecha(f_ev, function(tau) r_interp(tau) + spread_s - 0.01)
+    v_vr_p100 <- valorar_en_fecha(f_ev, function(tau) r_interp(tau) + spread_s + 0.01)
+    
+    tibble(
+      ISIN = isin,
+      Estado = estado,
+      Categoria = categoria,
+      Etiqueta = paste0(isin, " (", estado, ")"),
+      Fecha = f_ev,
+      V_CA = v_ca,
+      VR_Base = v_vr_base,
+      VR_Menos100 = v_vr_m100,
+      VR_Mas100 = v_vr_p100,
+      Diff_Base = v_vr_base - v_ca,
+      Diff_Menos100 = v_vr_m100 - v_ca,
+      Diff_Mas100 = v_vr_p100 - v_ca
+    )
+  })
+}
+
+# Aplicar a los 6 bonos de la cartera
+trayectorias_bonos <- pmap_dfr(
+  list(
+    isin = cartera_bonos$ISIN,
+    estado = cartera_bonos$Estado,
+    categoria = cartera_bonos$Categoria,
+    cupon_nominal = cartera_bonos$Cupon_Nominal,
+    freq = cartera_bonos$Periodicidad,
+    ref_fin = cartera_bonos$Ref_Fin,
+    fecha_venc = cartera_bonos$Fecha_Vencimiento,
+    precio_sucio = cartera_bonos$Precio_Sucio,
+    y0 = cartera_bonos$TIR_y0,
+    spread_s = cartera_bonos$Spread_s
+  ),
+  proyectar_trayectoria_bono
+)
+
+# ==============================================================================
+# FIGURA 1: 6 paneles (Coste Amortizado vs. Valor Razonable por escenarios)
+# ==============================================================================
+datos_fig1 <- trayectorias_bonos %>%
+  select(Etiqueta, Fecha, V_CA, VR_Base, VR_Menos100, VR_Mas100) %>%
+  pivot_longer(
+    cols = c(V_CA, VR_Base, VR_Menos100, VR_Mas100),
+    names_to = "Serie",
+    values_to = "Valor"
+  ) %>%
+  mutate(
+    Serie = factor(
+      Serie,
+      levels = c("V_CA", "VR_Base", "VR_Menos100", "VR_Mas100"),
+      labels = c(
+        "Coste Amortizado (TIR y0)",
+        "Valor Razonable (Base EIOPA)",
+        "Valor Razonable (-100 pb)",
+        "Valor Razonable (+100 pb)"
+      )
+    )
+  )
+
+fig1 <- ggplot(datos_fig1, aes(x = Fecha, y = Valor, color = Serie, linetype = Serie)) +
+  geom_hline(yintercept = 100, color = "grey75", linetype = "dotted", linewidth = 0.5) +
+  geom_line(linewidth = 0.85) +
+  facet_wrap(~ Etiqueta, ncol = 2, scales = "free_x") +
+  scale_color_manual(
+    values = c(
+      "Coste Amortizado (TIR y0)" = "#17365D",
+      "Valor Razonable (Base EIOPA)" = "#2E8B57",
+      "Valor Razonable (-100 pb)" = "#1F78B4",
+      "Valor Razonable (+100 pb)" = "#D95F02"
+    )
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "Coste Amortizado (TIR y0)" = "solid",
+      "Valor Razonable (Base EIOPA)" = "dashed",
+      "Valor Razonable (-100 pb)" = "dotdash",
+      "Valor Razonable (+100 pb)" = "dotdash"
+    )
+  ) +
+  labs(
+    title = "Proyección de trayectorias: Coste Amortizado vs. Valor Razonable",
+    subtitle = "Escenarios deterministas sobre curva EIOPA y spread constantes (base 100, ex-cupón)",
+    x = "Fecha",
+    y = "Valoración (% del nominal)",
+    color = NULL,
+    linetype = NULL
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold", color = "#17365D"),
+    panel.grid.minor = element_blank()
+  ) +
+  guides(color = guide_legend(nrow = 2))
+
+print(fig1)
+
+# ==============================================================================
+# FIGURA 2: Evolución de la diferencia V_VR(t) - V_CA(t) por bono (agrupado por país)
+# ==============================================================================
+datos_fig2 <- trayectorias_bonos %>%
+  select(ISIN, Estado, Etiqueta, Fecha, Diff_Base, Diff_Menos100, Diff_Mas100) %>%
+  pivot_longer(
+    cols = c(Diff_Base, Diff_Menos100, Diff_Mas100),
+    names_to = "Escenario",
+    values_to = "Diferencia"
+  ) %>%
+  mutate(
+    Escenario = factor(
+      Escenario,
+      levels = c("Diff_Base", "Diff_Menos100", "Diff_Mas100"),
+      labels = c("Escenario Base (0 pb)", "Desplazamiento -100 pb", "Desplazamiento +100 pb")
+    )
+  )
+
+fig2 <- ggplot(datos_fig2, aes(x = Fecha, y = Diferencia, color = ISIN, linetype = Escenario)) +
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
+  geom_line(linewidth = 0.85) +
+  facet_wrap(~ Estado, ncol = 3, scales = "free_x") +
+  scale_color_brewer(palette = "Dark2") +
+  scale_linetype_manual(
+    values = c(
+      "Escenario Base (0 pb)" = "solid",
+      "Desplazamiento -100 pb" = "dashed",
+      "Desplazamiento +100 pb" = "dotted"
+    )
+  ) +
+  labs(
+    title = expression(paste("Evolución de la plusvalía/minusvalía latente: ", V^{VR}, "(t) - ", V^{CA}, "(t)")),
+    subtitle = "Diferencia entre valoración Solvencia II y coste amortizado NIIF 9 por país y escenario",
+    x = "Fecha",
+    y = "Diferencia (puntos porcentuales)",
+    color = "Bono (ISIN)",
+    linetype = "Escenario"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "bottom",
+    legend.box = "vertical",
+    strip.text = element_text(face = "bold", color = "#17365D"),
+    panel.grid.minor = element_blank()
+  )
+
+print(fig2)
+
+
+################################################################################
 ###############################  FASE 3   ######################################
 
 ################################################################################
