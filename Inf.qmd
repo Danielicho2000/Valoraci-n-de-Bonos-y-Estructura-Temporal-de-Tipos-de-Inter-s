@@ -33,25 +33,25 @@ Conectar los fundamentos de la matemática financiera con los marcos regulatorio
 
 Para la realización del proyecto, la fecha de valoración de referencia se ha fijado en el 30 de septiembre de 2026 (2026-09-30). La cartera está integrada por seis bonos soberanos reales seleccionados de acuerdo con los criterios regulatorios exigidos (mínimo 10 años de plazo residual al corte) y clasificados en tres niveles de riesgo:
 
-- **Bonos A (Referencia / Bajo Riesgo - Alemania):**
+-   **Bonos A (Referencia / Bajo Riesgo - Alemania):**
 
-  - `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA, precio limpio de 105.06 y cupón corrido de 1.0247.
+    -   `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA, precio limpio de 105.06 y cupón corrido de 1.0247.
 
-  - `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA, precio limpio de 103.53 y cupón corrido de 2.9479.
+    -   `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA, precio limpio de 103.53 y cupón corrido de 2.9479.
 
 <!-- -->
 
-- **Bonos B (Soberano Periférico - Italia):**
+-   **Bonos B (Soberano Periférico - Italia):**
 
-  - `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+, precio limpio de 94.55 y cupón corrido de 0.3565.
+    -   `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+, precio limpio de 94.55 y cupón corrido de 0.3565.
 
-  - `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+, precio limpio de 84.53 y cupón corrido de 0.2363.
+    -   `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+, precio limpio de 84.53 y cupón corrido de 0.2363.
 
-- **Bonos C (Mercado Emergente - Colombia en EUR):**
+-   **Bonos C (Mercado Emergente - Colombia en EUR):**
 
-  - `XS3239891503` (Colombia - Global EUR): Emitido el 2025-11-26 con vencimiento el 2038-11-26, cupón anual del 6.50%, rating BB+, precio limpio de 97.793 y cupón corrido de 5.4849.
+    -   `XS3239891503` (Colombia - Global EUR): Emitido el 2025-11-26 con vencimiento el 2038-11-26, cupón anual del 6.50%, rating BB+, precio limpio de 97.793 y cupón corrido de 5.4849.
 
-  - `XS3183160236` (Colombia - Global EUR): Emitido el 2025-09-19 con vencimiento el 2036-02-19, cupón anual del 5.625%, rating BB+, precio limpio de 94.95 y cupón corrido de 3.4366.
+    -   `XS3183160236` (Colombia - Global EUR): Emitido el 2025-09-19 con vencimiento el 2036-02-19, cupón anual del 5.625%, rating BB+, precio limpio de 94.95 y cupón corrido de 3.4366.
 
 ------------------------------------------------------------------------
 
@@ -795,6 +795,20 @@ La Tabla 11 recoge la variación del precio ante desplazamientos paralelos de ±
 
 El desarrollo de Taylor de segundo orden reproduce con gran precisión la revaloración completa: el error es de 0,014 puntos porcentuales para la cartera (alrededor del 0,15 % de la variación total) y no supera 0,03 puntos porcentuales en ningún bono. El error es mayor en los bonos con mayor convexidad y su signo se invierte entre los dos escenarios, lo que es consistente con el término de tercer orden que el desarrollo omite.
 
+```{r}
+bono_max_conv <- cartera_sens %>% slice_max(Convexidad, n = 1)
+bono_min_conv <- cartera_sens %>% slice_min(Convexidad, n = 1)
+err_m100_max  <- res_sens %>% filter(Delta_y_pb == -100, ISIN != "Cartera") %>% slice_max(abs(Error), n = 1)
+err_p100_max  <- res_sens %>% filter(Delta_y_pb ==  100, ISIN != "Cartera") %>% slice_max(abs(Error), n = 1)
+```
+
+Desde un punto de vista analítico, la aproximación de segundo orden trunca la serie de Taylor a partir de la derivada tercera:
+
+$$\text{Error}_{\text{Taylor}} = \frac{\Delta P_{\text{Taylor}}}{P} - \frac{\Delta P_{\text{Full}}}{P} \approx -\frac{1}{6} D_3 (\Delta y)^3 - \frac{1}{24} D_4 (\Delta y)^4 - \dots$$
+
+- **¿Para qué bonos y escenarios resulta relevante la convexidad?** Dado que $C \propto \sum \tau_k(\tau_k+1)PV(C_k)$, la convexidad es más relevante en los bonos de **mayor plazo residual y menor cupón relativo** —en esta cartera, el bono **`r bono_max_conv$ISIN`** (`r bono_max_conv$Estado`, $C = `r sprintf("%.1f", bono_max_conv$Convexidad)`$) frente al **`r bono_min_conv$ISIN`** (`r bono_min_conv$Estado`, $C = `r sprintf("%.1f", bono_min_conv$Convexidad)`$)—. Por escenarios, el término $\frac{1}{2}C(\Delta y)^2$ es siempre positivo, por lo que amortigua las pérdidas ante subidas de tipos ($+100\text{ pb}$) y amplifica las ganancias ante bajadas ($-100\text{ pb}$), volviéndose indispensable cuando los desplazamientos son moderados o grandes ($|\Delta y| \ge 100\text{ pb}$).
+- **¿Por qué el error crece con el plazo y con $\Delta y$?** Al aumentar el plazo residual, los flujos se concentran en valores altos de $\tau_k$, haciendo que las derivadas de tercer y cuarto orden ($D_3 \propto \tau^3$, $D_4 \propto \tau^4$) crezcan más rápido que la convexidad. El mayor error se observa en el título más largo (`r err_p100_max$ISIN`, con errores de `r sprintf("%.3f", err_m100_max$Error * 100)` pp y `r sprintf("%.3f", err_p100_max$Error * 100)` pp ante $\mp 100\text{ pb}$).
+
 ### Evolución temporal
 
 ```{r, fig.cap="Proyección de trayectorias (izquierda) y evolución de la diferencia V_VR - V_CA (derecha)", fig.width=14, fig.height=6.5, out.width="100%"}
@@ -989,13 +1003,13 @@ print(fig_combinada)
 
 Se nota que:
 
-- El aumento en la tasa de descuento reduce el valor actual de los flujos futuros, en cambio, el coste amortizado permanece inmune a las fluctuaciones del mercado al utilizar la TIR inicial fija $y_{ 0,i}$
+-   El aumento en la tasa de descuento reduce el valor actual de los flujos futuros, en cambio, el coste amortizado permanece inmune a las fluctuaciones del mercado al utilizar la TIR inicial fija $y_{ 0,i}$
 
-- Existe una reducción en la tasa de descuento tal que eleva el valor razonable del bono, generando una plusvalía latente $V^{VR}(t)\geq V^{CA}(t)$
+-   Existe una reducción en la tasa de descuento tal que eleva el valor razonable del bono, generando una plusvalía latente $V^{VR}(t)\geq V^{CA}(t)$
 
-- El valor de mercado cae aunque los tipos libres de riesgo de la EIOPA no varíen.
+-   El valor de mercado cae aunque los tipos libres de riesgo de la EIOPA no varíen.
 
-- A medida que se acerque la fecha de vencimiento y asumiendo la ausencia de impago, se evidencia que se anula la diferencia de las métricas $V^{VR}(t) \text{ y } V^{CA}(t)$
+-   A medida que se acerque la fecha de vencimiento y asumiendo la ausencia de impago, se evidencia que se anula la diferencia de las métricas $V^{VR}(t) \text{ y } V^{CA}(t)$
 
 ## Fase 3: Modelización Estocástica del tipo de Interés
 
@@ -1361,6 +1375,14 @@ ggplot(resumen_simulacion, aes(x = Mes)) +
 
 Se puede evidenciar una alza en el valor porcentual de la Tasa corta durante el año, concluyendo que el modelo de Vasicek proyecta una tendencia creciente de las tasas de interés hacia su nivel de equilibrio de largo plazo. Este comportamiento se explica porque la tasa corta inicial estimada $r_0=2.7337\%$ es inferior al nivel de reversión $b=3.5342\%$.
 
+**Riesgo de modelo: supuestos, limitaciones y alternativas.** Aunque el modelo de Vasicek permite obtener precios cerrados de bonos cupón cero y simular trayectorias exactas, incorpora tres limitaciones relevantes:
+
+1. **Posibilidad de tipos negativos:** Al seguir $r_t$ un proceso gaussiano de Ornstein-Uhlenbeck, asigna probabilidad estrictamente positiva a tasas nominales negativas ($r_t < 0$), lo que puede resultar poco realista en determinados entornos monetarios.
+2. **Carácter de un solo factor:** Toda la curva depende de un único movimiento browniano ($W_t$), imponiendo una correlación perfecta entre los cambios de tipos de distintos plazos e impidiendo capturar rotaciones de pendiente o cambios de curvatura.
+3. **Ajuste imperfecto a la curva inicial:** Con tres parámetros constantes $(a, b, r_0)$ y $\sigma$ histórico, el modelo no ajusta exactamente todos los nodos de la curva EIOPA ($\text{RMSE} = `r sprintf("%.2f", RMSE * 10000)`\text{ pb}$), introduciendo un error de valoración inicial en $t = 0$.
+
+
+
 ### Revaloración a un año
 
 Una vez obtenidas las $N = 10\,000$ trayectorias simuladas de la tasa corta al horizonte $T = 1$ año ($t = \text{2027-09-30}$), se reconstruye la estructura temporal de tipos de interés para cada escenario mediante la solución analítica del modelo de Vasicek. Dado que todos los títulos de la cartera vencen a partir de 2036, ninguno alcanza su vencimiento durante el primer año, reduciéndose en exactamente un año el plazo residual $\tau_{k,1} = \tau_{k,0} - 1$ de todos los flujos futuros.
@@ -1497,26 +1519,37 @@ knitr::kable(
 
 El $\text{VaR}_{99,5\%}$ estocástico indica que, con un $99,5\,\%$ de confianza, la pérdida máxima de la cartera al cabo de un año no superará los $0,772$ EUR ($0,130\,\%$ de su valor inicial), mientras que el $\text{TVaR}_{99,5\%}$ revela que, en el $0,5\,\%$ de los peores escenarios posibles, la pérdida promedio esperada asciende a $1,000$ EUR ($0,169\,\%$).
 
+
+### Gestión activo-pasivo (ALM)
+
+Supóngase que la cartera de bonos ($V_0 = `r sprintf("%.2f", sum(cartera_sens$Precio_Sucio))`$, $D_{\text{mod}}^{\text{cartera}} = `r sprintf("%.2f", D_cartera)`\text{ años}$) respalda un pasivo con un único pago en $T$ años y valor presente $V_P = V_0$.
+
+- **Riesgos que permanecen abiertos:**
+  1. **Movimientos no paralelos de la curva:** Cambios de pendiente o curvatura en la ETTI EIOPA afectan de forma distinta a los flujos escalonados de los bonos frente al flujo único del pasivo en $T$.
+  2. **Riesgo de reinversión y descalce temporal:** Los cupones cobrados antes de $T$ deben reinvertirse a tipos futuros inciertos; además, la duración cambia con el paso del tiempo (*drift* de duración), obligando a rebalancear periódicamente la cartera.
+  3. **Riesgo de diferencial de crédito (*spread*) y default:** La duración inmuniza frente a movimientos de la curva libre de riesgo, pero los bonos de Italia (BBB+) y Colombia (BB+) siguen expuestos a ampliaciones de sus spreads $s_i$ o impagos que no afectan al pasivo.
+  4. **Descalce de convexidad ante shocks severos:** Si $C_A < C_P$, un desplazamiento paralelo amplio de los tipos provocará una pérdida neta de solvencia pese a tener igualadas las duraciones.
+
 ## Bibliografía
 
-- **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
+-   **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
 
-- **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
+-   **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
 
-- **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
+-   **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
 
-- **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
+-   **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
 
-- **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
+-   **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
 
-- **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
+-   **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
 
-- [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
+-   [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
 
-- **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
+-   **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
 
-- **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
+-   **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
 
-- **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>
+-   **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>
 
-- European Central Bank (ECB) (2026). AAA Yield Curve: 1-Year Spot Rate, Euro Area. ECB Data Portal. [https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y](https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y?utm_source=chatgpt.com)
+-   European Central Bank (ECB) (2026). AAA Yield Curve: 1-Year Spot Rate, Euro Area. ECB Data Portal. [https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y](https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y?utm_source=chatgpt.com)

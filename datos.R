@@ -6,7 +6,7 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 library(readxl)
-#install.packages("purrr")
+install.packages("purrr")
 library(purrr)
 library(lubridate)
 
