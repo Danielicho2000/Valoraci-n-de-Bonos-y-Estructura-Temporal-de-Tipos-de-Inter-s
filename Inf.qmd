@@ -1,7 +1,10 @@
 ---
 title: "Valoración de Bonos y Estructura Temporal de Tipos de Interés"
-author: "----"
-date: " --- "
+author: 
+  - "Evelin Cuyo"
+  - "Daniel Lara"
+date: today
+date-format: "DD [de] MMMM [de] YYYY"
 format:  
   pdf:    
     pdf-engine: xelatex    
