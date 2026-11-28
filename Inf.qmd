@@ -27,15 +27,22 @@ execute:
   warning: false
   message: false
   output: true
+
+
+  
 ---
+\clearpage
 
 ## Introducción
 
 La valoración de instrumentos de renta fija es uno de los pilares de la matemática actuarial. Las entidades aseguradoras mantienen en sus balances carteras de bonos soberanos que respaldan compromisos de largo plazo con los asegurados, y el modo en que dichos activos se valoran determina tanto el resultado contable como la solvencia de la entidad.
 
-Hoy conviven dos lógicas de valoración. Bajo NIIF 9, un bono mantenido para cobrar flujos contractuales se mide a coste amortizado, es decir, con la tasa interna de retorno fijada en el momento de la adquisición, de modo que las fluctuaciones del mercado no afectan al valor contable. Bajo Solvencia II, en cambio, el balance económico exige valorar activos y pasivos a valor razonable, descontando los flujos con la estructura temporal de tipos de interés publicada por la EIOPA. La diferencia entre ambos valores es una medida directa del riesgo de tipo de interés y de crédito al que está expuesta la entidad.
+Hoy conviven dos lógicas de valoración. Bajo NIIF 9, un bono mantenido para cobrar flujos contractuales se mide a coste amortizado, es decir, con la tasa interna de retorno fijada en el momento de la adquisición, de modo que las fluctuaciones del mercado no afectan al valor contable. Bajo Solvencia II, en cambio, el balance económico exige valorar activos y pasivos a valor razonable, descontando los flujos con la estructura temporal de tipos de interés (ETTI) libre de riesgo publicada por la EIOPA. La diferencia entre ambos valores es una medida directa del riesgo de tipo de interés y de crédito al que está expuesta la entidad.
 
-En este trabajo se construirá una cartera de bonos soberanos reales, se valorará bajo ambos enfoques, se medirá su sensibilidad a movimientos de la curva de tipos y se cuantificará su riesgo
+En este trabajo se construye una cartera de seis bonos soberanos reales en euros (Alemania, Italia y Chile) con fecha de valoración 30 de septiembre de 2026. La cartera se valora con ambos criterios y se mide su sensibilidad a la curva mediante duración, convexidad y escenarios de ±100 pb. Después se calibra un modelo de Vasicek para simular la cartera a un año y estimar el VaR y el TVaR al 99,5 %. Finalmente, se discuten las implicaciones para una aseguradora bajo Solvencia II. Todo el análisis se implementó en R y es reproducible a partir de los datos originales.
+
+El informe se organiza así: la Fase 1 presenta la cartera y la curva de EIOPA; la Fase 2 desarrolla la valoración a coste amortizado y a valor razonable, junto con el análisis de sensibilidad; la Fase 3 construye el modelo estocástico y mide el riesgo; la Fase 4 discute las cuestiones planteadas (impacto en Solvencia II, diferencial de crédito, riesgo de modelo y gestión activo-pasivo); y el informe termina con las conclusiones.
+
 
 ## Objetivo Principal:
 
@@ -45,178 +52,77 @@ Conectar los fundamentos de la matemática financiera con los marcos regulatorio
 
 Para la realización del proyecto, la fecha de valoración de referencia se ha fijado en el 30 de septiembre de 2026 (2026-09-30). La cartera está integrada por seis bonos soberanos reales seleccionados de acuerdo con los criterios regulatorios exigidos (mínimo 10 años de plazo residual al corte) y clasificados en tres niveles de riesgo:
 
-- **Bonos A (Referencia / Bajo Riesgo - Alemania):**
-
-  - `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA, precio limpio de 105.06 y cupón corrido de 1.0247.
-
-  - `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA, precio limpio de 103.53 y cupón corrido de 2.9479.
-
-<!-- -->
-
-- **Bonos B (Soberano Periférico - Italia):**
-
-  - `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+, precio limpio de 94.55 y cupón corrido de 0.3565.
-
-  - `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+, precio limpio de 84.53 y cupón corrido de 0.2363.
-
-- **Bonos C (Mercado Emergente - Colombia en EUR):**
-
-  - `XS3239891503` (Colombia - Global EUR): Emitido el 2025-11-26 con vencimiento el 2038-11-26, cupón anual del 6.50%, rating BB+, precio limpio de 97.793 y cupón corrido de 5.4849.
-
-  - `XS3183160236` (Colombia - Global EUR): Emitido el 2025-09-19 con vencimiento el 2036-02-19, cupón anual del 5.625%, rating BB+, precio limpio de 94.95 y cupón corrido de 3.4366.
+-   **Bonos A (Referencia / Bajo Riesgo - Alemania):**
+    -   `DE0001135325` (Bund): Emitido el 2007-01-26 con vencimiento el 2039-07-04 (plazo residual $\ge 10$ años), cupón nominal anual del 4.25%, rating AAA.
+    -   `DE0001135275` (Bund): Emitido el 2005-01-04 con vencimiento el 2037-01-04, cupón nominal anual del 4.00%, rating AAA.
+-   **Bonos B (Soberano Periférico - Italia):**
+    -   `IT0005530032` (Italia - BTP): Emitido el 2022-09-01 con vencimiento el 2043-09-01, pago semestral con cupón del 4.45%, rating BBB+.
+    -   `IT0005321325` (Italia - BTP): Emitido el 2018-01-15 con vencimiento el 2038-09-01, pago semestral con cupón del 2.95%, rating BBB+.
+-   **Bonos C (Mercado Emergente - Chile en EUR):**
+    -   `XS2291662890` (Chile - Global EUR): Emitido el 2021-01-22 con vencimiento el 2051-01-22, cupón anual del 1.25%, rating A-.
+    -   `XS3459014182` (Chile - Global EUR): Emitido el 2026-08-03 con vencimiento el 2038-08-03, cupón anual del 4.375%, rating A-.
 
 ------------------------------------------------------------------------
 
 ```{r}
-library(dplyr)
+# ============================================================
+# FASE 1: Lectura y Procesamiento
+# ============================================================
+library(dplyr) 
 library(tidyr)
 library(tibble)
 library(readxl)
-#install.packages("purrr")
 library(purrr)
 library(lubridate)
+library(stringr)
 
 fecha_valoracion <- as.Date("2026-09-30")
 
-cupon_corrido <- function(cupon, freq, inicio_devengo, ref_inicio, ref_fin, fecha) {
-  (cupon / freq) * as.numeric(fecha - inicio_devengo) /
-    as.numeric(ref_fin - ref_inicio) * 100
+# 1. Lectura del Excel (encabezados en fila 6 -> skip = 5)
+ruta_archivo <- "Cartera_Bonos_Soberanos-v2.xlsx"
+if (!file.exists(ruta_archivo)) ruta_archivo <- "Cartera_Bonos_Soberanos.xlsx"
+
+cartera_raw <- read_excel(ruta_archivo, sheet = "Cartera_Bonos", skip = 5)
+
+# 2. Limpieza y filtrado estricto de los 6 bonos válidos
+cartera_limpia <- cartera_raw %>%
+  filter(!is.na(ISIN), grepl("^[A-Z0-9]{12}$", str_trim(as.character(ISIN)))) %>%
+  slice(1:6) %>%
+  mutate(
+    Cupon_Nominal = suppressWarnings(as.numeric(str_replace_all(as.character(Cupon_Nominal), "[%\\s]", ""))),
+    Cupon_Nominal = if_else(!is.na(Cupon_Nominal) & Cupon_Nominal > 1, Cupon_Nominal / 100, Cupon_Nominal),
+    Precio_Limpio = suppressWarnings(as.numeric(str_replace_all(as.character(Precio_Limpio), ",", "."))),
+    Periodicidad  = as.numeric(Periodicidad),
+    across(c(Fecha_Emision, Fecha_Vencimiento, Inicio_Devengo, Ref_Inicio, Ref_Fin), as.Date)
+  ) %>%
+  filter(!is.na(Cupon_Nominal), !is.na(Precio_Limpio), !is.na(Periodicidad))
+
+# 3. Función de cupón corrido
+cupon_corrido <- function(cupon, freq, fecha_ant, fecha_sig, fecha) {
+  dias_transcurridos <- as.numeric(fecha - fecha_ant)
+  dias_periodo       <- as.numeric(fecha_sig - fecha_ant)
+  (cupon / freq) * (dias_transcurridos / dias_periodo) * 100
 }
 
-cartera_bonos <- tibble(
-  ISIN = c(
-    "DE0001135325", "DE0001135275",   # A – Alemania (2 Bunds)
-    "IT0005530032", "IT0005321325",   # B – Italia (Corregido ISIN BTP 2.95% Sep 2038)
-    "XS3239891503", "XS3183160236"    # C – Colombia (2 globales EUR reales más largos)
-  ),
-  Emisor = c(
-    "Alemania (Bund)",   "Alemania (Bund)",
-    "Italia (BTP)",      "Italia (BTP)",
-    "Colombia (Global)", "Colombia (Global)"
-  ),
-  Estado = c("Alemania", "Alemania", "Italia", "Italia", "Colombia", "Colombia"),
-  Categoria = c(
-    "A - Bajo Riesgo", "A - Bajo Riesgo",
-    "B - Periférico",  "B - Periférico",
-    "C - Emergente",   "C - Emergente"
-  ),
-  Moneda = rep("EUR", 6),
-  Rating = c("AAA", "AAA", "BBB+", "BBB+", "BB+", "BB+"),
-  
-  Fecha_Emision = as.Date(c(
-    "2007-01-26", "2005-01-04",
-    "2022-09-01", "2018-01-15",
-    "2025-11-26", "2025-09-19"
-  )),
-  Fecha_Vencimiento = as.Date(c(
-    "2039-07-04", "2037-01-04",
-    "2043-09-01", "2038-09-01",
-    "2038-11-26", "2036-02-19"  
-  )),
-  
-  Cupon_Nominal = c(0.0425, 0.0400, 0.0445, 0.0295, 0.0650, 0.05625),
-  Periodicidad  = c(1, 1, 2, 2, 1, 1),
-  
-  Inicio_Devengo = as.Date(c(
-    "2026-07-04", "2026-01-04",
-    "2026-09-01", "2026-09-01",
-    "2025-11-26", "2026-02-19"
-  )),
-  Ref_Inicio = as.Date(c(
-    "2026-07-04", "2026-01-04",
-    "2026-09-01", "2026-09-01",
-    "2025-11-26", "2026-02-19"
-  )),
-  Ref_Fin = as.Date(c(
-    "2027-07-04", "2027-01-04",
-    "2027-03-01", "2027-03-01",
-    "2026-11-26", "2027-02-19"
-  )),
-  
-  # Precios limpios verificados al 2026-09-30
-  Precio_Limpio = c(
-    105.06,   # DE0001135325 – Borsa Italiana
-    103.53,   # DE0001135275 – Repubblica Finanza / Borsa Italiana
-    94.55,    # IT0005530032 – BTP 4.45% Sep 2043
-    84.53,    # IT0005321325 – BTP 2.95% Sep 2038 (Corregido)
-    97.793,   # XS3239891503 – Colombia 6.50% Nov 2038 (Finanzen.at / Frankfurt)
-    94.95     # XS3183160236 – Colombia 5.625% Feb 2036 (Börse Frankfurt)
-  )
-) %>%
+# 4. Cálculo final
+cartera_bonos <- cartera_limpia %>%
   mutate(
     Plazo_Residual = as.numeric(Fecha_Vencimiento - fecha_valoracion) / 365.25,
-    Cumple_10y     = Fecha_Vencimiento >= as.Date("2036-01-01"),
-    Cupon_Corrido  = cupon_corrido(Cupon_Nominal, Periodicidad,
-                                   Inicio_Devengo, Ref_Inicio, Ref_Fin,
-                                   fecha_valoracion),
-    Precio_Sucio   = Precio_Limpio + Cupon_Corrido
-  )
-
-
-
-```
-
-```{r}
-
-library(dplyr)
-library(knitr)
-library(kableExtra)
-
-tabla_cartera <- cartera_bonos %>%
-  transmute(
-    ISIN,
-    `Categoría` = Categoria,
-    `País` = Estado,
-    `Vencimiento` = format(Fecha_Vencimiento, "%d/%m/%Y"),
-    `Plazo (años)` = sprintf("%.2f", Plazo_Residual),
-    `P. limpio` = sprintf("%.2f", Precio_Limpio),
-    `Cupón corrido` = sprintf("%.2f", Cupon_Corrido),
-    `P. sucio` = sprintf("%.2f", Precio_Sucio)
-  )
-
-tabla_cartera %>%
-  knitr::kable(
-    format = "latex",
-    booktabs = TRUE,
-    escape = TRUE,
-    caption = "Características y valoración de la cartera de bonos",
-    align = c("l", "l", "l", "c", "r", "r", "r", "r"),
-    linesep = ""
-  ) %>%
-  kableExtra::kable_styling(
-    latex_options = c(
-      "striped",
-      "scale_down",
-      "hold_position"
+    Cumple_10y = Plazo_Residual >= 10,
+    Cupon_Corrido = pmap_dbl(
+      list(Cupon_Nominal, Periodicidad, Inicio_Devengo, Ref_Fin),
+      ~ cupon_corrido(..1, ..2, ..3, ..4, fecha_valoracion)
     ),
-    font_size = 8,
-    full_width = FALSE,
-    position = "center",
-    stripe_color = "gray!10"
-  ) %>%
-  kableExtra::row_spec(
-    0,
-    bold = TRUE,
-    color = "white",
-    background = "#17365D"
-  ) %>%
-  kableExtra::add_header_above(
-    c(
-      "Identificación del bono" = 4,
-      "Valoración por 100 de nominal" = 4
-    ),
-    bold = TRUE
+    Precio_Sucio = Precio_Limpio + Cupon_Corrido
   )
 
 ```
 
 ### Justificación Técnica y Procesamiento de la ETTI EIOPA
 
-Para el cálculo del valor razonable (*Mark-to-Market*) exigido por Solvencia II, se extrae la Estructura Temporal de Tipos de Interés (ETTI) desde la hoja oficial `RFR_spot_no_VA` del informe EIOPA a fecha 30 de septiembre de 2026.
+Para el cálculo del valor razonable (*Mark-to-Market*) exigido por Solvencia II, se extrae la Estructura Temporal de Tipos de Interés (ETTI) desde la hoja oficial `Spot_no_VA` del informe EIOPA a fecha 30 de septiembre de 2026.
 
-Se ha seleccionado la variante sin ajuste por volatilidad (*no-VA*) para evaluar los flujos bajo una curva pura libre de riesgo sin sesgos por iliquidez. Técnicamente, los datos brutos del archivo Excel se leen como texto para evitar inconsistencias de formato. La extracción comienza a partir de la fila 11 (donde inician las curvas de tipos) seleccionando los plazos anuales (*Maturity*, columna C), las tasas spot en euros (EUR, columna D) utilizadas para la mayoría de los bonos de la cartera, y las tasas spot en dólares (USD, columna AQ) necesarias para la valoración del bono global de Colombia.
-
-------------------------------------------------------------------------
+Se ha seleccionado la variante sin ajuste por volatilidad (*no-VA*) para evaluar los flujos bajo una curva pura libre de riesgo sin sesgos por iliquidez. Dado que todos los bonos de la cartera (incluyendo los de Chile) están denominados en Euros (EUR), se utiliza únicamente la curva spot EUR. Técnicamente, los datos brutos del archivo Excel se leen a partir de la fila 11 (donde inician las curvas de tipos) seleccionando los plazos anuales (*Maturity*) y las tasas spot en euros.
 
 ```{r, include=FALSE}
 raw_eiopa <- read_excel(
@@ -240,13 +146,13 @@ stopifnot(max(curva_final$Maturity) >= 30)
 
 ### Valoración a Coste Amortizado
 
-El valor de la **Tasa Interna de Retorno (TIR)** \$y_0\$ para cada bono fue obtenido resolviendo la ecuación:
+El valor de la **Tasa Interna de Retorno (TIR)** $\y_0\$ para cada bono fue obtenido resolviendo la ecuación:
 
 $$
 P_0=\sum_{k=1}^{n}\frac{C_k}{(1+y_0)^{t_k-t_0}} + \frac{VN}{(1+y_0)^{t_n-t_0}}
 $$
 
-Con: $C_k$ cupones periódicos mensuales, $P_0$ precio de adquisición sucio y $VN$ el valor nominal (base 1000).
+Con: $C_k$ cupones periódicos (según la frecuencia del bono), $P_0$ precio de adquisición sucio y $VN$ el valor nominal (base 1000).
 
 Obteniendo los siguientes resultados de $y_0$ para cada bono
 
@@ -289,7 +195,7 @@ calcular_tir_bono <- function(cupon_nominal, freq, ref_fin, fecha_venc,
   solucion <- uniroot(f_objetivo, interval = c(-0.05, 0.50), extendInt = "yes", tol = 1e-10)
   
   return(solucion$root)
-}
+} 
 
 # Aplicar a toda la cartera 
 cartera_bonos <- cartera_bonos %>%
@@ -368,7 +274,7 @@ tabla_tir %>%
 A continuación se muestra las tablas de amortización completa para cada título, mediante la siguiente expresión para calcular el valor contable en el periodo $k$, considerando que $V_0^{CA}=P_0$
 
 $$
-V_k^{\text{CA}} = V_{k-1}^{\text{CA}} \times (1 + y_0)^{t_k - t_{k-1}} - C_kV_k^{\text{CA}} 
+V_k^{\text{CA}} = V_{k-1}^{\text{CA}} \times (1 + y_0)^{t_k - t_{k-1}} - C_k 
 $$
 
 ```{r}
@@ -450,7 +356,7 @@ tablas_amortizacion <- pmap(
     isin = cartera_bonos$ISIN,
     estado = cartera_bonos$Estado,
     cupon_nominal = cartera_bonos$Cupon_Nominal,
-    freq = cartera_bonos$Periodicidad,
+    freq = cartera_bonos$Periodicidad, 
     fecha_venc = cartera_bonos$Fecha_Vencimiento,
     precio_sucio = cartera_bonos$Precio_Sucio,
     y0 = cartera_bonos$TIR_y0
@@ -547,7 +453,7 @@ for (i in seq_along(tablas_amortizacion)) {
   cat(as.character(tabla_pdf), "\n\n")
 }
 
-cat("\\endgroup\n")
+cat("\\endgroup\n") 
 ```
 
 ### Valoración a precio de mercado con la curva EIOPA
@@ -582,7 +488,7 @@ $$
 
 cuantifica la parte del valor atribuible al **riesgo de crédito**, mientras que $V^{VR}(0)$ recoge el riesgo de tipo de interés puro.
 
-Finalmente, se comparan los spreads entre emisores y se analiza su coherencia con la calificación crediticia: se espera que el spread aumente al pasar de Alemania (AAA) a Italia (BBB+) y a Colombia (BB+).
+Finalmente, se comparan los spreads entre emisores y se analiza su coherencia con la calificación crediticia: se espera que el spread aumente al descender la calificación desde Alemania (AAA) hacia Chile (A-) e Italia (BBB+).
 
 ```{r}
 # Curva interpolada linealmente 
@@ -663,13 +569,11 @@ tabla_spread %>%
   )
 ```
 
-Los resultados muestran que el spread de crédito calibrado es coherente con la calificación de cada emisor. Los Bunds alemanes (AAA) presentan spreads casi nulos (1,2 y 13,7 pb), de modo que su precio de mercado es prácticamente el que resulta de descontar con la curva libre de riesgo de la EIOPA. Los BTP italianos (BBB+) cotizan con spreads de 111,0 y 137,6 pb, y los bonos de Colombia (BB+) con 280,3 y 318,1 pb, de modo que el spread aumenta al descender la calificación, como era de esperar.
+Los resultados muestran que el spread de crédito calibrado guarda coherencia con la calificación de cada emisor. Los Bunds alemanes (AAA) presentan spreads reducidos (`r sprintf("%.1f", min(cartera_bonos$Spread_s[cartera_bonos$Estado=="Alemania"])*1e4)` y `r sprintf("%.1f", max(cartera_bonos$Spread_s[cartera_bonos$Estado=="Alemania"])*1e4)` pb), por lo que su precio de mercado es muy cercano al que resulta de descontar con la curva libre de riesgo de la EIOPA. Los bonos soberanos de Chile (A-) cotizan con spreads intermedios (`r sprintf("%.1f", min(cartera_bonos$Spread_s[cartera_bonos$Estado=="Chile"])*1e4)` y `r sprintf("%.1f", max(cartera_bonos$Spread_s[cartera_bonos$Estado=="Chile"])*1e4)` pb), mientras que los BTP italianos (BBB+) registran los mayores diferenciales (`r sprintf("%.1f", min(cartera_bonos$Spread_s[cartera_bonos$Estado=="Italia"])*1e4)` y `r sprintf("%.1f", max(cartera_bonos$Spread_s[cartera_bonos$Estado=="Italia"])*1e4)` pb), aumentando el spread conforme disminuye la calidad crediticia.
 
-Dentro de cada emisor, el bono de mayor plazo presenta el mayor spread (Italia 2043 frente a 2038, y Colombia 2038 frente a 2036), lo que es consistente con una prima por plazo.
+Dentro de cada emisor, el bono de mayor plazo presenta un spread superior frente al de menor vencimiento, lo cual es consistente con la existencia de una prima por plazo.
 
-La descomposición del valor indica que la parte atribuible al riesgo de crédito, $V^{VR}(0) - P^{\text{mercado}}$, es de apenas el 0,1 % y el 1,3 % del valor libre de riesgo en los Bunds, del 10,1 % y el 14,7 % en los BTP, y del 17,8 % y el 22,8 % en los bonos colombianos. Así, en los bonos de peor calificación una parte considerable de la diferencia entre el valor libre de riesgo y el valor de mercado se debe al riesgo de crédito y no solo al de tipos de interés.
-
-**Limitaciones del supuesto de spread constante:** Si bien la calibración de un diferencial de crédito constante supone que todos los flujos futuros de un mismo bono están sujetos a una prima de riesgo idéntica e independientemente de su vencimiento, puede verse limitada en la percepción del riesgo de incumplimiento, la liquidez y la incertidumbre sobre la capacidad de pago del emisor; pueden varian segun el horizonte temporal.
+La descomposición del valor indica que la parte atribuible al riesgo de crédito, $V^{VR}(0) - P^{\text{mercado}}$, representa entre el `r sprintf("%.1f", min(100*cartera_bonos$Parte_credito[cartera_bonos$Estado=="Alemania"]/cartera_bonos$V_VR_0[cartera_bonos$Estado=="Alemania"]))` % y el `r sprintf("%.1f", max(100*cartera_bonos$Parte_credito[cartera_bonos$Estado=="Alemania"]/cartera_bonos$V_VR_0[cartera_bonos$Estado=="Alemania"]))` % del valor libre de riesgo en los Bunds alemanes, entre el `r sprintf("%.1f", min(100*cartera_bonos$Parte_credito[cartera_bonos$Estado=="Chile"]/cartera_bonos$V_VR_0[cartera_bonos$Estado=="Chile"]))` % y el `r sprintf("%.1f", max(100*cartera_bonos$Parte_credito[cartera_bonos$Estado=="Chile"]/cartera_bonos$V_VR_0[cartera_bonos$Estado=="Chile"]))` % en los bonos de Chile, y entre el `r sprintf("%.1f", min(100*cartera_bonos$Parte_credito[cartera_bonos$Estado=="Italia"]/cartera_bonos$V_VR_0[cartera_bonos$Estado=="Italia"]))` % y el `r sprintf("%.1f", max(100*cartera_bonos$Parte_credito[cartera_bonos$Estado=="Italia"]/cartera_bonos$V_VR_0[cartera_bonos$Estado=="Italia"]))` % en los BTP italianos. De este modo, en los emisores con menor calificación una proporción sustancial de la diferencia respecto al valor libre de riesgo responde al riesgo de crédito y no únicamente al riesgo de tipos de interés.
 
 ### Análisis de sensibilidad y riesgo de tipo de interés
 
@@ -783,7 +687,18 @@ knitr::kable(tabla_met, format = "latex", booktabs = TRUE, linesep = "",
   kableExtra::row_spec(nrow(tabla_met), bold = TRUE)
 ```
 
-La Tabla 10 muestra que la cartera tiene una duración modificada de 8,82 años y una convexidad de 103,7: ante una variación de 1 punto porcentual en los tipos, su valor cambia aproximadamente un 8,8 %. Por bono, la duración modificada oscila entre 6,81 años (Colombia 2036) y 11,30 años (BTP 2043). Esta diferencia responde al plazo residual, al cupón y al rendimiento: los bonos de mayor plazo y menor cupón tienen mayor duración (BTP 2043 y BTP 2038), mientras que un rendimiento y un cupón elevados la reducen, como ocurre con Colombia 2038, cuya duración (7,74) es inferior a la de los bonos alemanes pese a su mayor plazo. La convexidad sigue el mismo orden que la duración.
+```{r}
+#| include: false
+bono_min_dmod <- cartera_sens %>% slice_min(D_mod, n = 1)
+bono_max_dmod <- cartera_sens %>% slice_max(D_mod, n = 1)
+var_m100_cart <- res_sens %>% filter(ISIN == "Cartera", Delta_y_pb == -100) %>% pull(Var_full) * 100
+var_p100_cart <- res_sens %>% filter(ISIN == "Cartera", Delta_y_pb ==  100) %>% pull(Var_full) * 100
+err_max_cart  <- max(abs(res_sens %>% filter(ISIN == "Cartera") %>% pull(Error))) * 100
+err_max_bono  <- max(abs(res_sens %>% filter(ISIN != "Cartera") %>% pull(Error))) * 100
+```
+
+La tabla anterior muestra que la cartera tiene una duración modificada de `r sprintf("%.2f", D_cartera)` años y una convexidad de `r sprintf("%.1f", C_cartera)`: ante una variación de 1 punto porcentual en los tipos, su valor cambia aproximadamente un `r sprintf("%.1f", D_cartera)` %. Por bono, la duración modificada oscila entre `r sprintf("%.2f", bono_min_dmod$D_mod)` años (`r bono_min_dmod$Estado` `r format(bono_min_dmod$Fecha_Vencimiento, "%Y")`) y `r sprintf("%.2f", bono_max_dmod$D_mod)` años (`r bono_max_dmod$Estado` `r format(bono_max_dmod$Fecha_Vencimiento, "%Y")`). Esta diferencia responde al plazo residual, al cupón y al rendimiento: los bonos de mayor plazo y menor cupón tienen mayor duración, mientras que un cupón y rendimiento más altos adelantan los flujos en el tiempo y reducen la sensibilidad. La convexidad sigue el mismo orden que la duración.
+
 
 ```{r}
 tabla_sens <- res_sens %>%
@@ -800,11 +715,14 @@ knitr::kable(tabla_sens, format = "latex", booktabs = TRUE, linesep = "",
                             font_size = 8) %>%
   kableExtra::row_spec(0, bold = TRUE, color = "white", background = "#17365D") %>%
   kableExtra::row_spec(c(7, 14), bold = TRUE)
+
+
 ```
 
-La Tabla 11 recoge la variación del precio ante desplazamientos paralelos de ±100 pb. Con −100 pb la cartera se revaloriza un 9,36 % y con +100 pb pierde un 8,32 %. Esta asimetría se debe a la convexidad positiva, cuyo término aporta unos 0,52 puntos porcentuales en ambos escenarios. Los bonos más sensibles son los de mayor duración (BTP 2043) y los menos sensibles los de menor duración (Colombia 2036).
+La tabla de sensibilidad recoge la variación del precio ante desplazamientos paralelos de $\pm 100$ pb. Con $-100$ pb la cartera se revaloriza un `r sprintf("%.2f", var_m100_cart)` % y con $+100$ pb pierde un `r sprintf("%.2f", abs(var_p100_cart))` %. Esta asimetría se debe a la convexidad positiva, cuyo término cuadrático aporta unos `r sprintf("%.2f", 0.5 * C_cartera * (0.01^2) * 100)` puntos porcentuales en ambos escenarios. Los bonos más sensibles son los de mayor duración (`r bono_max_dmod$Estado` `r format(bono_max_dmod$Fecha_Vencimiento, "%Y")`) y los menos sensibles los de menor duración (`r bono_min_dmod$Estado` `r format(bono_min_dmod$Fecha_Vencimiento, "%Y")`).
 
-El desarrollo de Taylor de segundo orden reproduce con gran precisión la revaloración completa: el error es de 0,014 puntos porcentuales para la cartera (alrededor del 0,15 % de la variación total) y no supera 0,03 puntos porcentuales en ningún bono. El error es mayor en los bonos con mayor convexidad y su signo se invierte entre los dos escenarios, lo que es consistente con el término de tercer orden que el desarrollo omite.
+El desarrollo de Taylor de segundo orden reproduce con gran precisión la revaloración completa: el error máximo para la cartera es de `r sprintf("%.3f", err_max_cart)` puntos porcentuales y no supera `r sprintf("%.3f", err_max_bono)` puntos porcentuales en ningún bono. El error es mayor en los bonos con mayor convexidad y su signo se invierte entre los dos escenarios, lo que es consistente con el término de tercer orden que el desarrollo omite.
+
 
 ```{r}
 bono_max_conv <- cartera_sens %>% slice_max(Convexidad, n = 1)
@@ -817,12 +735,12 @@ Desde un punto de vista analítico, la aproximación de segundo orden trunca la 
 
 $$\text{Error}_{\text{Taylor}} = \frac{\Delta P_{\text{Taylor}}}{P} - \frac{\Delta P_{\text{Full}}}{P} \approx -\frac{1}{6} D_3 (\Delta y)^3 - \frac{1}{24} D_4 (\Delta y)^4 - \dots$$
 
-- **¿Para qué bonos y escenarios resulta relevante la convexidad?** Dado que $C \propto \sum \tau_k(\tau_k+1)PV(C_k)$, la convexidad es más relevante en los bonos de **mayor plazo residual y menor cupón relativo** —en esta cartera, el bono **`r bono_max_conv$ISIN`** (`r bono_max_conv$Estado`, $C = `r sprintf("%.1f", bono_max_conv$Convexidad)`$) frente al **`r bono_min_conv$ISIN`** (`r bono_min_conv$Estado`, $C =`r sprintf("%.1f", bono_min_conv$Convexidad)`$)—. Por escenarios, el término $\frac{1}{2}C(\Delta y)^2$ es siempre positivo, por lo que amortigua las pérdidas ante subidas de tipos ($+100\text{ pb}$) y amplifica las ganancias ante bajadas ($-100\text{ pb}$), volviéndose indispensable cuando los desplazamientos son moderados o grandes ($|\Delta y| \ge 100\text{ pb}$).
-- **¿Por qué el error crece con el plazo y con** $\Delta y$? Al aumentar el plazo residual, los flujos se concentran en valores altos de $\tau_k$, haciendo que las derivadas de tercer y cuarto orden ($D_3 \propto \tau^3$, $D_4 \propto \tau^4$) crezcan más rápido que la convexidad. El mayor error se observa en el título más largo (`r err_p100_max$ISIN`, con errores de `r sprintf("%.3f", err_m100_max$Error * 100)` pp y `r sprintf("%.3f", err_p100_max$Error * 100)` pp ante $\mp 100\text{ pb}$).
-
+-   **¿Para qué bonos y escenarios resulta relevante la convexidad?** Dado que $C \propto \sum \tau_k(\tau_k+1)PV(C_k)$, la convexidad es más relevante en los bonos de **mayor plazo residual y menor cupón relativo** —en esta cartera, el bono **`r bono_max_conv$ISIN`** (`r bono_max_conv$Estado`, $C = `r sprintf("%.1f", bono_max_conv$Convexidad)`$) frente al **`r bono_min_conv$ISIN`** (`r bono_min_conv$Estado`, $C =`r sprintf("%.1f", bono_min_conv$Convexidad)`$)—. Por escenarios, el término $\frac{1}{2}C(\Delta y)^2$ es siempre positivo, por lo que amortigua las pérdidas ante subidas de tipos ($+100\text{ pb}$) y amplifica las ganancias ante bajadas ($-100\text{ pb}$), volviéndose indispensable cuando los desplazamientos son moderados o grandes ($|\Delta y| \ge 100\text{ pb}$).
+-   **¿Por qué el error crece con el plazo y con** $\Delta y$? Al aumentar el plazo residual, los flujos se concentran en valores altos de $\tau_k$, haciendo que las derivadas de tercer y cuarto orden ($D_3 \propto \tau^3$, $D_4 \propto \tau^4$) crezcan más rápido que la convexidad. El mayor error se observa en el título más largo (`r err_p100_max$ISIN`, con errores de `r sprintf("%.3f", err_m100_max$Error * 100)` pp y `r sprintf("%.3f", err_p100_max$Error * 100)` pp ante $\mp 100\text{ pb}$).
+ 
 ### Evolución temporal
 
-```{r, fig.cap="Proyección de trayectorias (izquierda) y evolución de la diferencia V_VR - V_CA (derecha)", fig.width=14, fig.height=6.5, out.width="100%"}
+```{r}
 
 library(dplyr)
 library(tidyr)
@@ -958,10 +876,10 @@ colores_escenarios <- c(
 ```{r}
 #| label: fig-evolucion-valoraciones
 #| fig-cap: "Evolución temporal del coste amortizado y del valor razonable de los bonos."
-#| fig-width: 7
-#| fig-height: 7
+#| fig-width: 8
+#| fig-height: 5.5
 #| fig-align: center
-#| out-width: "100%"
+#| out-width: "95%"
 
 datos_fig1 <- trayectorias_bonos %>%
   group_by(ISIN) %>%
@@ -1046,10 +964,10 @@ print(fig1)
 ```{r}
 #| label: fig-diferencias-valoracion
 #| fig-cap: "Evolución de las diferencias entre valor razonable y coste amortizado por emisor soberano."
-#| fig-width: 7
-#| fig-height: 7
+#| fig-width: 8
+#| fig-height: 6.2
 #| fig-align: center
-#| out-width: "100%"
+#| out-width: "95%"
 
 datos_fig2 <- trayectorias_bonos %>%
   group_by(ISIN, Estado) %>%
@@ -1078,7 +996,7 @@ datos_fig2 <- trayectorias_bonos %>%
   mutate(
     Estado = factor(
       Estado,
-      levels = c("Alemania", "Italia", "Colombia")
+      levels = c("Alemania", "Italia", "Chile")
     ),
     Escenario = factor(
       Escenario,
@@ -1145,21 +1063,18 @@ fig2 <- ggplot(
     legend.box = "vertical"
   ) +
   guides(
-    color = guide_legend(nrow = 1, order = 1),
+    color = guide_legend(nrow = 2,byrow=TRUE, order = 1),
     linetype = guide_legend(nrow = 1, order = 2)
   )
 
 print(fig2)
 ```
-Se nota que:
 
-- El aumento en la tasa de descuento reduce el valor actual de los flujos futuros, en cambio, el coste amortizado permanece inmune a las fluctuaciones del mercado al utilizar la TIR inicial fija $y_{ 0,i}$
+De las figuras anteriores se observa que:
 
-- Existe una reducción en la tasa de descuento tal que eleva el valor razonable del bono, generando una plusvalía latente $V^{VR}(t)\geq V^{CA}(t)$
-
-- El valor de mercado cae aunque los tipos libres de riesgo de la EIOPA no varíen.
-
-- A medida que se acerque la fecha de vencimiento y asumiendo la ausencia de impago, se evidencia que se anula la diferencia de las métricas $V^{VR}(t) \text{ y } V^{CA}(t)$
+- **Inmunidad contable frente a sensibilidad de mercado:** El aumento en la tasa de descuento ($+100\text{ pb}$) reduce el valor actual de los flujos futuros, mientras que el coste amortizado permanece inmune a las fluctuaciones del mercado al mantener fija la TIR inicial $y_{0,i}$.
+- **Efecto paso del tiempo (*pull-to-par*):** Incluso en el escenario base sin variaciones en los tipos de interés, ambos valores convergen progresivamente hacia el valor nominal de $100\text{ EUR}$ a medida que se acerca el vencimiento (subiendo en los bonos adquiridos bajo la par como Italia y Chile, y bajando en los adquiridos sobre la par como Alemania).
+- **Anulación de la diferencia al vencimiento:** A medida que se aproxima la fecha de vencimiento —y asumiendo ausencia de impago— la diferencia $V^{VR}(t) - V^{CA}(t)$ tiende a cero en todos los escenarios.
 
 ## Fase 3: Modelización Estocástica del tipo de Interés
 
@@ -1500,6 +1415,12 @@ resumen_simulacion <- tibble(
 
 ################################################################################
 # 3. Evolución de la tasa media y bandas percentílicas
+#| label: fig-vasicek-sim
+#| fig-cap: "Evolución simulada de la tasa corta bajo Vasicek (media e intervalo del 90 %)."
+#| fig-width: 7.5
+#| fig-height: 3.8
+#| fig-align: center
+#| out-width: "90%"
 ggplot(resumen_simulacion, aes(x = Mes)) +
   geom_ribbon(
     aes(
@@ -1523,13 +1444,15 @@ ggplot(resumen_simulacion, aes(x = Mes)) +
   theme_minimal()
 ```
 
-Se puede evidenciar una alza en el valor porcentual de la Tasa corta durante el año, concluyendo que el modelo de Vasicek proyecta una tendencia creciente de las tasas de interés hacia su nivel de equilibrio de largo plazo. Este comportamiento se explica porque la tasa corta inicial estimada $r_0=2.7337\%$ es inferior al nivel de reversión $b=3.5342\%$.
+Se evidencia un incremento progresivo de la tasa corta media a lo largo del horizonte de un año, lo que refleja la reversión hacia su media de largo plazo: dado que la tasa corta inicial estimada ($r_0 = `r sprintf("%.4f", r0_hat * 100)`\%$) es inferior al nivel de equilibrio ($b = `r sprintf("%.4f", b_hat * 100)`\%$), las trayectorias simuladas presentan una tendencia alcista esperada.
 
 **Riesgo de modelo: supuestos, limitaciones y alternativas.** Aunque el modelo de Vasicek permite obtener precios cerrados de bonos cupón cero y simular trayectorias exactas, incorpora tres limitaciones relevantes:
 
-1.  **Posibilidad de tipos negativos:** Al seguir $r_t$ un proceso gaussiano de Ornstein-Uhlenbeck, asigna probabilidad estrictamente positiva a tasas nominales negativas ($r_t < 0$), lo que puede resultar poco realista en determinados entornos monetarios.
-2.  **Carácter de un solo factor:** Toda la curva depende de un único movimiento browniano ($W_t$), imponiendo una correlación perfecta entre los cambios de tipos de distintos plazos e impidiendo capturar rotaciones de pendiente o cambios de curvatura.
-3.  **Ajuste imperfecto a la curva inicial:** Con tres parámetros constantes $(a, b, r_0)$ y $\sigma$ histórico, el modelo no ajusta exactamente todos los nodos de la curva EIOPA ($\text{RMSE} = `r sprintf("%.2f", RMSE * 10000)`\text{ pb}$), introduciendo un error de valoración inicial en $t = 0$.
+1. **Posibilidad de tipos negativos:** Al seguir $r_t$ un proceso gaussiano de Ornstein-Uhlenbeck, asigna probabilidad estrictamente positiva a tasas nominales negativas ($r_t < 0$), lo que puede resultar poco realista en determinados entornos monetarios.
+2. **Carácter de un solo factor:** Toda la curva depende de un único movimiento browniano ($W_t$), imponiendo una correlación perfecta entre los cambios de tipos de distintos plazos e impidiendo capturar rotaciones de pendiente o cambios de curvatura.
+3. **Ajuste imperfecto a la curva inicial:** Con tres parámetros constantes $(a, b, r_0)$ y $\sigma$ histórico, el modelo no ajusta exactamente todos los nodos de la curva EIOPA ($\text{RMSE} = `r sprintf("%.2f", RMSE * 10000)`\text{ pb}$), introduciendo un error de valoración inicial en $t = 0$.
+
+Como **alternativas** para superar estas limitaciones destacan el modelo **Cox-Ingersoll-Ross (CIR)** —que introduce $\sigma\sqrt{r_t}\,dW_t$ para garantizar tasas estrictamente no negativas— y el modelo de **Hull-White de un factor**, que sustituye $b$ por una función determinista del tiempo $\theta(t)$ para ajustar de forma exacta la curva inicial de la EIOPA, o modelos multifactoriales (como **G2++**) si se requiere capturar cambios de pendiente y curvatura. 
 
 ### Revaloración a un año
 
@@ -1665,38 +1588,47 @@ knitr::kable(
 
 ```
 
-El $\text{VaR}_{99,5\%}$ estocástico indica que, con un $99,5$% de confianza, la pérdida máxima de la cartera al cabo de un año no superará los $0,772$ EUR ($0,130$% de su valor inicial), mientras que el $\text{TVaR}_{99,5}$% revela que, en el $0,5$% de los peores escenarios posibles, la pérdida promedio esperada asciende a $1,000$ EUR ($0,169$%).
+Los resultados de la tabla muestran que, bajo la calibración de Vasicek a un año, el $\text{VaR}_{99,5\%}$ de pérdida es de `r sprintf("%.3f", VaR_995_EUR)` EUR (`r sprintf("%.3f", VaR_995_Pct)` % del valor inicial) y el $\text{TVaR}_{99,5\%}$ asciende a `r sprintf("%.3f", TVaR_995_EUR)` EUR (`r sprintf("%.3f", TVaR_995_Pct)` %). Estos valores son muy reducidos en comparación con la pérdida de `r sprintf("%.3f", perdida_det_100bps_EUR)` EUR (`r sprintf("%.3f", perdida_det_100bps_Pct)` %) que provoca el escenario determinista de $+100\text{ pb}$. Esta diferencia se explica por dos motivos: primero, la volatilidad histórica estimada ($\hat{\sigma} = `r sprintf("%.4f", sigma_hat * 100)`\%$) y la fuerte reversión a la media ($a = `r sprintf("%.2f", a_hat)`$) acotan la dispersión de los tipos largos simulados por Vasicek; segundo, al avanzar un año en el tiempo ($T = 1$), la cartera incorpora el efecto devengo (*pull-to-par* positivo de los bonos bajo la par) y reduce su plazo residual, compensando casi por completo las caídas de precio en los escenarios adversos de la simulación.
+
+## Fase 4: Cuestiones de Discusión
+
+### Impacto regulatorio (NIIF 9 frente a Solvencia II) y diferencial de crédito
+
+- **Volatilidad en fondos propios y SCR:** Mientras que bajo NIIF 9 la valoración a coste amortizado estabiliza el valor en libros mediante la TIR histórica $y_0$, el balance económico de Solvencia II exige valorar a mercado. Ante una subida paralela de $+100\text{ pb}$, el valor de mercado de la cartera cae un `r sprintf("%.2f", abs(var_p100_cart))` %, reduciendo directamente los fondos propios básicos si los pasivos no tienen la misma duración, e incrementando el requerimiento de capital por riesgo de tipo de interés dentro del **SCR** (*Solvency Capital Requirement*).
+- **Limitaciones del diferencial de crédito constante:** Asumir un spread $s_i$ fijo y plano para toda la curva ignora la estructura temporal del riesgo de crédito (los plazos más largos suelen exigir mayor prima), así como la correlación entre ciclos de ampliación de spreads y caídas de tipos libres de riesgo (*flight-to-quality*), subestimando el riesgo de *spread* regulatorio en emisores periféricos o emergentes.
 
 ### Gestión activo-pasivo (ALM)
 
-Supóngase que la cartera de bonos ( $V_0$ ), y $D_{\text{mod}}^{\text{cartera}}$ respalda un pasivo con un único pago en $T$ años, con un valor presente $V_P = V_0$. Se nota lo siguiente:
+Supóngase que la cartera de bonos (con valor $V_0$ y duración modificada $D_{\text{mod}}^{\text{cartera}} = `r sprintf("%.2f", D_cartera)`$ años) respalda un pasivo con un único pago en $T$ años y valor presente $V_P = V_0$, cumpliendo la condición de inmunización de primer orden ($D_{\text{mod}}^{\text{activo}} = D_{\text{mod}}^{\text{pasivo}}$). Aun así, permanecen abiertos cuatro riesgos clave:
 
-- **Riesgos que permanecen abiertos:**
-  1.  **Movimientos no paralelos de la curva:** Cambios de pendiente o curvatura en la ETTI EIOPA afectan de forma distinta a los flujos escalonados de los bonos frente al flujo único del pasivo en $T$.
-  2.  **Riesgo de reinversión y descalce temporal:** Los cupones cobrados antes de $T$ deben reinvertirse a tipos futuros inciertos; además, la duración cambia con el paso del tiempo (*drift* de duración), obligando a rebalancear periódicamente la cartera.
-  3.  **Riesgo de diferencial de crédito (*spread*) y default:** La duración inmuniza frente a movimientos de la curva libre de riesgo, pero los bonos de Italia (BBB+) y Colombia (BB+) siguen expuestos a ampliaciones de sus spreads $s_i$ o impagos que no afectan al pasivo.
-  4.  **Descalce de convexidad ante shocks severos:** Si $C_A < C_P$, un desplazamiento paralelo amplio de los tipos provocará una pérdida neta de solvencia pese a tener igualadas las duraciones.
+1. **Movimientos no paralelos de la curva:** Cambios de pendiente (*steepening/flattening*) o curvatura en la ETTI EIOPA afectan de forma distinta a los flujos escalonados de los seis bonos frente al flujo único del pasivo en $T$.
+2. **Riesgo de reinversión y descalce temporal:** Los cupones cobrados antes de $T$ deben reinvertirse a tipos futuros inciertos; además, la duración de activos y pasivos evoluciona a distinto ritmo con el paso del tiempo (*drift* de duración), obligando a rebalancear periódicamente la cartera.
+3. **Riesgo de diferencial de crédito (*spread*) y default:** La duración inmuniza frente a movimientos de la curva libre de riesgo, pero los bonos de Italia (BBB+) y Chile (A-) siguen expuestos a ampliaciones de sus spreads $s_i$ o eventos de crédito que no afectan al pasivo.
+4. **Descalce de convexidad ante shocks severos:** Dado que un bono cupón cero en $T$ tiene mayor convexidad que una cartera con cupones de igual duración ($C_A < C_P$), un desplazamiento paralelo amplio de los tipos provocará una caída mayor (o menor subida) en el activo que en el pasivo, generando una pérdida neta de solvencia pese a tener igualadas las duraciones.
+
+\clearpage
+
 
 ## Bibliografía
 
-- **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
+-   **EIOPA (2026).** *Risk-free interest rate term structures – September 2026*. Autoridad Europea de Seguros y Pensiones de Jubilación. <https://www.eiopa.europa.eu/tools-and-data/risk-free-interest-rate-term-structures_en>
 
-- **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
+-   **EIOPA (2026).** *RFR Technical Documentation: The methodology to derive EIOPA's risk-free interest rate term structures* (Documento EIOPA-BoS-26/198). <https://www.eiopa.europa.eu/document/download/7da8a1f3-e395-4789-bdc1-76984f8510b2_en>
 
-- **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
+-   **Borsa Italiana (2026).** *Bund Lug39 Eur 4,25 – Scheda titolo*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/DE0001135325-MOTX.html?lang=it> 
 
-- **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
+-   **Repubblica Finanza (2026).** *Bund Gen37 Eur 4 – Quotazioni*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/DE0001135275/90/>
 
-- **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
+-   **Repubblica Finanza (2026).** *Btp Tf 4,45% St43 Eur – Grafico Avanzato*. <https://finanza.repubblica.it/Obbligazioni/TitoliDiStato/Grafico/IT0005530032/90/>
 
-- **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
+-   **Borsa Italiana (2026).** *Italien, Republik EO-B.T.P. 2018(38) – Scheda*. <https://www.borsaitaliana.it/borsa/obbligazioni/mot/euro-obbligazioni/scheda/IT0005321325-MOTX.html?lang=it> 
 
-- [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
+-   [**Finanzen.at**](https://finanzen.at/) **(2026).** *Kolumbien, Republik EO-Bonds 2025(38/38) – Kurs*. <https://www.finanzen.at/anleihen/kolumbien-republik-eo-bonds-2025-38-38>
 
-- **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
+-   **Börse Stuttgart (2026).** *Kolumbien 25/38 – A4ELRM*. <https://www.boerse-stuttgart.de/de/produkte/anleihen/kolumbien-25-38>
 
-- **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
+-   **Börse Frankfurt (2026).** *Colombia, República EO-Obligationen 2018(41/41)*. <https://www.boerse-frankfurt.de/anleihe/colombia-republic-eo-obligationen-2018-41-41> 
 
-- **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>
+-   **International Capital Market Association (ICMA) (2021).** *Rule 251: Actual/Actual (ICMA) Day Count Fraction*. <https://www.icmagroup.org/assets/documents/Regulatory/Secondary-markets/Rule-251-Actual-Actual-ICMA-25-05-2021.pdf>
 
-- European Central Bank (ECB) (2026). AAA Yield Curve: 1-Year Spot Rate, Euro Area. ECB Data Portal. [https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y](https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y?utm_source=chatgpt.com)
+-   European Central Bank (ECB) (2026). AAA Yield Curve: 1-Year Spot Rate, Euro Area. ECB Data Portal. [https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y](https://data.ecb.europa.eu/data/datasets/YC/YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_1Y?utm_source=chatgpt.com)

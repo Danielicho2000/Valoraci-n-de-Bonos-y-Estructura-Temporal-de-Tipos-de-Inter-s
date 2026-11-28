@@ -6,93 +6,84 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 library(readxl)
-install.packages("purrr")
 library(purrr)
 library(lubridate)
+library(stringr) # Necesario para limpiar formatos de texto en el Excel
 
 fecha_valoracion <- as.Date("2026-09-30")
 
-cupon_corrido <- function(cupon, freq, inicio_devengo, ref_inicio, ref_fin, fecha) {
-  (cupon / freq) * as.numeric(fecha - inicio_devengo) /
-    as.numeric(ref_fin - ref_inicio) * 100
+# --- 1. Lectura del Excel ---
+tryCatch({
+  ruta_archivo <- "Cartera_Bonos_Soberanos.xlsx"
+  
+  # skip = 5 ignora los títulos decorativos y lee los encabezados reales
+  cartera_raw <- read_excel(ruta_archivo, sheet = "Cartera_Bonos", skip = 5)
+  
+}, error = function(e) {
+  cat("\n--- ERROR AL LEER EL EXCEL ---\n")
+  cat("Ruta actual: ", getwd(), "\n")
+  if (file.exists("Cartera_Bonos_Soberanos.xlsx")) {
+    cat("El archivo existe. Hojas disponibles:\n")
+    print(excel_sheets("Cartera_Bonos_Soberanos.xlsx"))
+  }
+  stop("No se pudo cargar el Excel.")
+})
+
+# --- 2. Limpieza de datos ---
+# Filtramos solo filas con ISIN válido (12 caracteres) para eliminar totales o filas vacías
+# y convertimos los formatos de porcentaje/coma a números puros que R entienda.
+cartera_limpia <- cartera_raw %>%
+  filter(nchar(as.character(ISIN)) == 12) %>%
+  mutate(
+    # Convertir "4,2500%" a 0.0425
+    Cupon_Nominal = as.numeric(str_replace_all(as.character(Cupon_Nominal), "[%,\\s]", "")) / 100,
+    # Convertir "105,06" a 105.06
+    Precio_Limpio = as.numeric(str_replace_all(as.character(Precio_Limpio), ",", ".")),
+    # Asegurar que las fechas se lean correctamente
+    across(c(Fecha_Emision, Fecha_Vencimiento, Inicio_Devengo, Ref_Inicio, Ref_Fin), as.Date)
+  )
+
+cat("Bonos detectados en el Excel:", nrow(cartera_limpia), "\n")
+
+# --- 3. Función de cupón corrido ---
+cupon_corrido <- function(cupon, freq, fecha_ant, fecha_sig, fecha) {
+  dias_transcurridos <- as.numeric(fecha - fecha_ant)
+  dias_periodo       <- as.numeric(fecha_sig - fecha_ant)
+  (cupon / freq) * (dias_transcurridos / dias_periodo) * 100
 }
 
-cartera_bonos <- tibble(
-  ISIN = c(
-    "DE0001135325", "DE0001135275",   # A – Alemania (2 Bunds)
-    "IT0005530032", "IT0005321325",   # B – Italia (Corregido ISIN BTP 2.95% Sep 2038)
-    "XS3239891503", "XS3183160236"    # C – Colombia (2 globales EUR reales más largos)
-  ),
-  Emisor = c(
-    "Alemania (Bund)",   "Alemania (Bund)",
-    "Italia (BTP)",      "Italia (BTP)",
-    "Colombia (Global)", "Colombia (Global)"
-  ),
-  Estado = c("Alemania", "Alemania", "Italia", "Italia", "Colombia", "Colombia"),
-  Categoria = c(
-    "A - Bajo Riesgo", "A - Bajo Riesgo",
-    "B - Periférico",  "B - Periférico",
-    "C - Emergente",   "C - Emergente"
-  ),
-  Moneda = rep("EUR", 6),
-  Rating = c("AAA", "AAA", "BBB+", "BBB+", "BB+", "BB+"),
-  
-  Fecha_Emision = as.Date(c(
-    "2007-01-26", "2005-01-04",
-    "2022-09-01", "2018-01-15",
-    "2025-11-26", "2025-09-19"
-  )),
-  Fecha_Vencimiento = as.Date(c(
-    "2039-07-04", "2037-01-04",
-    "2043-09-01", "2038-09-01",
-    "2038-11-26", "2036-02-19"  
-  )),
-  
-  Cupon_Nominal = c(0.0425, 0.0400, 0.0445, 0.0295, 0.0650, 0.05625),
-  Periodicidad  = c(1, 1, 2, 2, 1, 1),
-  
-  Inicio_Devengo = as.Date(c(
-    "2026-07-04", "2026-01-04",
-    "2026-09-01", "2026-09-01",
-    "2025-11-26", "2026-02-19"
-  )),
-  Ref_Inicio = as.Date(c(
-    "2026-07-04", "2026-01-04",
-    "2026-09-01", "2026-09-01",
-    "2025-11-26", "2026-02-19"
-  )),
-  Ref_Fin = as.Date(c(
-    "2027-07-04", "2027-01-04",
-    "2027-03-01", "2027-03-01",
-    "2026-11-26", "2027-02-19"
-  )),
-  
-  # Precios limpios verificados al 2026-09-30
-  Precio_Limpio = c(
-    105.06,   # DE0001135325 – Borsa Italiana
-    103.53,   # DE0001135275 – Repubblica Finanza / Borsa Italiana
-    94.55,    # IT0005530032 – BTP 4.45% Sep 2043
-    84.53,    # IT0005321325 – BTP 2.95% Sep 2038 (Corregido)
-    97.793,   # XS3239891503 – Colombia 6.50% Nov 2038 (Finanzen.at / Frankfurt)
-    94.95     # XS3183160236 – Colombia 5.625% Feb 2036 (Börse Frankfurt)
-  )
-) %>%
+# --- 4. Procesamiento final y cálculos de la cartera ---
+cartera_bonos <- cartera_limpia %>%
   mutate(
+    # Plazo residual (usando 365.25 para considerar años bisiestos)
     Plazo_Residual = as.numeric(Fecha_Vencimiento - fecha_valoracion) / 365.25,
-    Cumple_10y     = Fecha_Vencimiento >= as.Date("2036-01-01"),
-    Cupon_Corrido  = cupon_corrido(Cupon_Nominal, Periodicidad,
-                                   Inicio_Devengo, Ref_Inicio, Ref_Fin,
-                                   fecha_valoracion),
-    Precio_Sucio   = Precio_Limpio + Cupon_Corrido
+    
+    # Verificación de plazo >= 10 años
+    Cumple_10y = Plazo_Residual >= 10,
+    
+    # Cupón corrido calculado con las fechas reales
+    Cupon_Corrido = pmap_dbl(
+      list(Cupon_Nominal, Periodicidad, Inicio_Devengo, Ref_Fin),
+      ~ cupon_corrido(..1, ..2, ..3, ..4, fecha_valoracion)
+    ),
+    
+    # Precio sucio
+    Precio_Sucio = Precio_Limpio + Cupon_Corrido
   )
 
-# Comprobaciones de la Fase 1
-# stopifnot(nrow(cartera_bonos) == 6)
-# stopifnot(all(cartera_bonos$Cumple_10y))
-# stopifnot(all(table(cartera_bonos$Categoria) == 2))
-# stopifnot(n_distinct(cartera_bonos$Estado) == 3)
-# stopifnot(all(cartera_bonos$Moneda == "EUR"))
+# --- 5. Comprobaciones de la Fase 1 (Validaciones) ---
+stopifnot(nrow(cartera_bonos) == 6)
+stopifnot(all(table(cartera_bonos$Categoria) == 2))
+stopifnot(n_distinct(cartera_bonos$Estado) == 3)
+stopifnot(all(cartera_bonos$Moneda == "EUR")) 
 
+if (!all(cartera_bonos$Cumple_10y)) {
+  warning("Atención: Alguno de los bonos tiene plazo residual menor a 10 años exactos. Revisa la cartera.")
+  print(cartera_bonos %>% filter(!Cumple_10y) %>% select(ISIN, Plazo_Residual))
+}
+
+# --- 6. Mostrar resultados ---
+cat("\n--- Cartera Procesada Correctamente (Fase 1) ---\n")
 print(cartera_bonos %>%
         select(ISIN, Categoria, Estado, Fecha_Vencimiento,
                Plazo_Residual, Precio_Limpio, Cupon_Corrido, Precio_Sucio))
@@ -104,7 +95,7 @@ print(cartera_bonos %>%
 # Función para calcular la TIR inicial (y_0) de un bono individual
 calcular_tir_bono <- function(cupon_nominal, freq, ref_fin, fecha_venc, 
                               precio_sucio, fecha_val = as.Date("2026-09-30"), 
-                              vn = 1000) {
+                              vn = 100) {
   
   cupon_nominal <- as.numeric(cupon_nominal)
   freq          <- as.numeric(freq)
@@ -244,6 +235,7 @@ tablas_amortizacion <- pmap(
 )
 ################################################################################
 #PARTE 2 FASE 2*************************************************
+### Valoración a precio de mercado con curva EIOPA (sin VA)
 
 raw_eiopa <- read_excel(
   "EIOPA_RFR_20260930_Term_Structures.xlsx",
